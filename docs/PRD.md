@@ -22,18 +22,22 @@ scoping decisions favour whichever option exercises more Go.
 
 ## 2. Background
 
-Two named gaps in the current job search:
+This is a learning project. My background is C# and .NET, and I wanted hands-on experience
+with Go's concurrency model, error handling and interface design on a problem with real
+constraints rather than a tutorial.
 
-- **Hands-on Go** is a *required* qualification at Coder and a stated preference at Quanata.
-- **Event-driven communication between services** (message queues, pub/sub, or streaming) is
-  a *required* qualification at Quanata and a preference at Gametime. An analytics
-  abstraction at work was designed to be destination-agnostic with a Kafka fast-follow, but
-  that migration never happened, so there is no production messaging experience to point to.
+Two things made this a better vehicle than a toy project:
 
-Phase 1 addresses the first. Phase 3 addresses the second.
+- A rate-limited API and a collection of several thousand cards means the interesting
+  question is *what do I check next*, not *how do I fetch things in parallel*.
+- Matching records across two systems that share no key is a genuine data problem, and it
+  fails silently if you get it wrong.
 
-Secondary benefit: a written comparison of Go against nine years of C# is a more credible
-interview answer than a tutorial repository.
+Phase 3 adds a message broker, which the workload justifies on its own terms: work that
+spans days, must survive restarts, and needs retry with dead-lettering.
+
+A secondary goal is a written comparison of Go against nine years of C#, which lives in
+the README.
 
 ## 3. Goals
 
@@ -289,8 +293,8 @@ Each phase leaves something complete.
 ### Resolved
 
 - **Which price source.** pokemontcg.io is deprecated: new registrations closed, existing keys
-  work only through 2027-03-01. Use TCGdex or PokéWallet as primary. An old pokemontcg.io key,
-  if one exists, becomes the second implementation.
+  work only through 2027-03-01. Use TCGdex or PokeWallet as primary. An existing pokemontcg.io
+  key becomes the second implementation.
 - **Where the card list comes from.** A TCG Collector collection export.
 - **Collection scale.** Roughly 8,000 to 9,000 rows.
 
@@ -309,7 +313,7 @@ Each phase leaves something complete.
 |---|---|
 | Free API changes or disappears again | DD-1. The interface exists for exactly this |
 | Scope creep into a web UI or a product | Section 4. Non-goals are explicit |
-| Phase 3 never happens, messaging gap stays open | DD-2 keeps the cost of phase 3 low. Phase 1 still delivers the Go gap |
+| Phase 3 never happens | DD-2 keeps the cost of phase 3 low, and phase 1 stands on its own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
 | Variant mismatches produce silently wrong prices | DD-5. Treat ambiguous matches as failures, not guesses |
 | Expansion display name to set code has no clean mapping source | Maintain it as data. Seed from the source API's set list, accept manual entries for the long tail |

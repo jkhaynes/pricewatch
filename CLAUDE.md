@@ -9,8 +9,8 @@ should work, but when a decision is close, choose the option that exercises more
 
 ## Who you are working with
 
-A senior .NET/C# engineer, roughly nine years in, currently a technical lead. Assume strong
-general engineering ability and no Go-specific knowledge.
+A senior .NET/C# engineer, roughly nine years in. Assume strong general engineering ability
+and no Go-specific knowledge.
 
 - Explain Go idioms where they differ meaningfully from C#. Do not explain general
   programming concepts.
@@ -52,7 +52,7 @@ phase must leave the project in a working, useful state.
 - **Interfaces are declared in the package that consumes them**, not next to their
   implementations. This is the Go convention and the reverse of the C# habit.
 - **A single failing card never aborts a run.** Log it, record it, continue. This mirrors
-  a production incident the author has already lived through.
+  a failure mode that is easy to reproduce and expensive to debug.
 
 ## Domain gotchas that will bite
 
