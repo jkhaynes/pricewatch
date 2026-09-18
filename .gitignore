@@ -1,0 +1,24 @@
+# Binaries
+/pricewatch
+/pricewatch.exe
+*.exe
+*.test
+*.out
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Personal collection data
+/data/
+*.csv
+
+# Env and local config
+.env
+*.local.json
+
+# Editor
+.vscode/
+.idea/
