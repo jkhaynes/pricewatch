@@ -30,14 +30,19 @@ func TestSets(t *testing.T) {
 	g := fakeGetter{"/sets": `{"success":true,"data":[
 		{"name":"Ruby and Sapphire","set_code":"RS","set_id":"1393","language":"eng"},
 		{"name":"SV06: Twilight Masquerade","set_code":"TWM","set_id":"23473","language":"eng"},
+		{"name":"SM - Guardians Rising","set_code":"SM02","set_id":"1919","language":"eng"},
+		{"name":"Unbroken Bonds","set_code":"UNB","set_id":"-185","language":"eng"},
 		{"name":"Vaporeon VMAX Promo","set_code":null,"set_id":"24073","language":"jap"}]}`}
 	sets, err := New(g).Sets(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Both prefix styles PokeWallet uses get a bare alias. Negative set IDs are
+	// CardMarket-only sets with no TCGplayer prices, so phase 1 never matches them.
 	want := []card.SourceSet{
 		{ID: "1393", Names: []string{"Ruby and Sapphire"}},
 		{ID: "23473", Names: []string{"SV06: Twilight Masquerade", "Twilight Masquerade"}},
+		{ID: "1919", Names: []string{"SM - Guardians Rising", "Guardians Rising"}},
 	}
 	if !slices.EqualFunc(sets, want, func(a, b card.SourceSet) bool { return a.ID == b.ID && slices.Equal(a.Names, b.Names) }) {
 		t.Errorf("Sets = %+v", sets)

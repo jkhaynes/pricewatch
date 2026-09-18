@@ -51,7 +51,9 @@ type Provider struct{ get Getter }
 
 func New(g Getter) *Provider { return &Provider{get: g} }
 
-var codePrefix = regexp.MustCompile(`^[A-Za-z0-9.\-]+:\s+`) // "SV06: Twilight Masquerade"
+// codePrefix matches both prefix styles in /sets: "SV06: Twilight Masquerade"
+// and "SM - Guardians Rising".
+var codePrefix = regexp.MustCompile(`^[A-Za-z0-9.\-]+(:\s+|\s+-\s+)`)
 
 func (p *Provider) Sets(ctx context.Context) ([]card.SourceSet, error) {
 	var resp struct {
@@ -66,7 +68,8 @@ func (p *Provider) Sets(ctx context.Context) ([]card.SourceSet, error) {
 	}
 	var out []card.SourceSet
 	for _, s := range resp.Data {
-		if s.Language != "eng" {
+		// Negative IDs are CardMarket-only sets: no TCGplayer prices, so never a match in phase 1.
+		if s.Language != "eng" || strings.HasPrefix(s.SetID, "-") {
 			continue
 		}
 		names := []string{s.Name}
