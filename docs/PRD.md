@@ -263,6 +263,26 @@ the collection. Change detection compares against that card's previous observati
 worth pennies. Weighting by card value means a $400 card gets checked often and a $0.06 card
 rarely.
 
+### DD-8: The export price breaks staleness ties
+
+**Decision:** when choosing what to check next, cards are ordered by staleness first. Cards
+that are equally stale are ordered by their TCG Collector export price, highest first. A
+source card that covers several collection rows (Normal and Reverse Holo, priced by one
+request) is worth its most valuable row. A missing price counts as zero. The source card ID
+is the final tie-breaker, so the order is deterministic.
+
+**Rationale:** on the first pass every card is tied at "never seen", so the tie-breaker
+decides the order of the first ~5,400 requests, about five and a half days. Without it that
+order comes from the source's opaque card IDs, and a $400 card could wait days behind
+$0.06 commons. The export already carries a price snapshot for every row (DD-6), so this
+costs one column in the selection query and needs no extra requests. Because the first pass
+runs in value order, later re-checks keep roughly that order.
+
+**Scope:** this is a tie-breaker, not value weighting. It never makes a card get checked
+*more often* than staleness allows, and a stale cheap card still comes before a fresher
+expensive one. Checking valuable cards more often remains the phase 2 refinement to DD-7
+(FR-10a). The snapshot price is used only for ordering, never reported as a market price.
+
 ## 9. Acceptance criteria, v1
 
 - [ ] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
