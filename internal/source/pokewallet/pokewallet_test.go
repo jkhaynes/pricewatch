@@ -9,7 +9,11 @@ import (
 	"testing"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/resolve"
 )
+
+// Compile-time proof that the provider fits the resolver's consumer-side interface.
+var _ resolve.Catalog = (*Provider)(nil)
 
 // fakeGetter answers from canned JSON keyed by path; trimmed from the 2026-09-18 spike.
 type fakeGetter map[string]string
