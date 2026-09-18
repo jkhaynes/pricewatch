@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/pipeline"
 	"github.com/jkhaynes/pricewatch/internal/source"
 )
 
@@ -148,5 +150,64 @@ func TestUnknownSourceIsAnError(t *testing.T) {
 	_, err := importCollection(t.Context(), importOpts{DB: e.db, CSV: e.csv, Source: "nope", Provider: e.prov}, io.Discard, quiet)
 	if err == nil || !strings.Contains(err.Error(), "pokewallet") {
 		t.Fatalf("err = %v, want an error listing known sources", err)
+	}
+}
+
+func (e *env) price(t *testing.T, budget int) pipeline.Summary {
+	t.Helper()
+	var out bytes.Buffer
+	sum, err := priceRun(t.Context(), nil, runOpts{DB: e.db, Source: "pokewallet", Budget: budget, Workers: 2, Provider: e.prov}, &out, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(out.String())
+	return sum
+}
+
+func TestRunIsASliceThatContinuesAndReportsPerCardChanges(t *testing.T) {
+	e := newEnv(t)
+	e.importWith(t, e.writeOverrides(t))
+
+	// Budget 1 request: pk_59 sorts first and prices BOTH Mudkip keys in one call.
+	s1 := e.price(t, 1)
+	if s1.Requests != 1 || s1.OK != 2 {
+		t.Fatalf("run 1 = %+v", s1)
+	}
+
+	// Continues: pk_60 was never seen. Its Reverse Holo is not offered, so it is reported, not guessed.
+	s2 := e.price(t, 1)
+	if s2.Requests != 1 || s2.OK != 0 || len(s2.NewlyUnresolved) != 1 {
+		t.Fatalf("run 2 = %+v", s2)
+	}
+	if u := s2.NewlyUnresolved[0]; !strings.Contains(u.Key, "60/109|reverse holo") || u.Status != card.StatusUnmatched {
+		t.Errorf("Numel reverse should be unmatched, not priced as normal: %+v", u)
+	}
+
+	e.fake.set(func(f *fakePokeWallet) { f.rev = 60.00 }) // reverse holo moves; normal does not
+
+	s3 := e.price(t, 10) // pk_60 is out of rotation now
+	if s3.Requests != 1 || s3.OK != 2 {
+		t.Fatalf("run 3 = %+v", s3)
+	}
+	if len(s3.Changes) != 1 || !strings.Contains(s3.Changes[0].CardID, "59/109|reverse holo") ||
+		*s3.Changes[0].Previous.Market != 50.47 || *s3.Changes[0].Current.Market != 60.00 {
+		t.Errorf("changes = %+v", s3.Changes)
+	}
+}
+
+func TestRateLimitEndsRunCleanlyAndNextRunContinues(t *testing.T) {
+	e := newEnv(t)
+	e.importWith(t, e.writeOverrides(t))
+
+	e.fake.set(func(f *fakePokeWallet) { f.limited = true })
+	s1 := e.price(t, 10)
+	if !errors.Is(s1.StoppedBy, card.ErrRateLimited) || s1.OK != 0 || s1.Failed != 0 || s1.Deferred != 3 {
+		t.Fatalf("limited run = %+v", s1)
+	}
+
+	e.fake.set(func(f *fakePokeWallet) { f.limited = false })
+	s2 := e.price(t, 10)
+	if s2.StoppedBy != nil || s2.OK != 2 || len(s2.NewlyUnresolved) != 1 {
+		t.Fatalf("next run did not pick up the deferred cards: %+v", s2)
 	}
 }
