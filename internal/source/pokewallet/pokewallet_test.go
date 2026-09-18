@@ -9,11 +9,18 @@ import (
 	"testing"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/pipeline"
 	"github.com/jkhaynes/pricewatch/internal/resolve"
+	"github.com/jkhaynes/pricewatch/internal/source"
 )
 
-// Compile-time proof that the provider fits the resolver's consumer-side interface.
-var _ resolve.Catalog = (*Provider)(nil)
+// Compile-time proof that the provider and the shared client fit the
+// consumer-side interfaces they are wired into.
+var (
+	_ resolve.Catalog      = (*Provider)(nil)
+	_ pipeline.PriceSource = (*Provider)(nil)
+	_ Getter               = (*source.Client)(nil)
+)
 
 // fakeGetter answers from canned JSON keyed by path; trimmed from the 2026-09-18 spike.
 type fakeGetter map[string]string

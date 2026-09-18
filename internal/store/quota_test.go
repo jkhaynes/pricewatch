@@ -1,6 +1,13 @@
 package store
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jkhaynes/pricewatch/internal/source"
+)
+
+// Compile-time proof that the store fits the HTTP client's consumer-side interface.
+var _ source.Quota = (*SQLite)(nil)
 
 func TestQuota(t *testing.T) {
 	s := openTest(t)

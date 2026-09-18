@@ -5,7 +5,11 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/pipeline"
 )
+
+// Compile-time proof that the store fits the runner's consumer-side interface.
+var _ pipeline.Store = (*SQLite)(nil)
 
 func fp(v float64) *float64 { return &v }
 
