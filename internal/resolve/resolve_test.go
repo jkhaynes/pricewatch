@@ -31,10 +31,15 @@ func newFake() *fakeCatalog {
 			{ID: "604", Names: []string{"Base Set"}},
 			{ID: "dupA", Names: []string{"Promos"}},
 			{ID: "dupB", Names: []string{"Promos"}},
+			// PokeWallet spells these without the accent (checked live, 2026-09-18).
+			{ID: "3064", Names: []string{"Pokemon GO"}},
+			{ID: "17688", Names: []string{"Crown Zenith"}},
 		},
 		cards: map[string][]card.SourceCard{
 			"1393":  {{ID: "pk_59", Number: "59", Name: "Mudkip"}},
 			"23473": {{ID: "pk_t1", Number: "001", Name: "Tangela"}},
+			"3064":  {{ID: "pk_go1", Number: "001", Name: "Bulbasaur"}},
+			"17688": {{ID: "pk_catch", Number: "138", Name: "Pokemon Catcher"}},
 			"604": {
 				{ID: "pk_zard", Number: "004", Name: "Charizard"},
 				{ID: "pk_dot", Number: "004", Name: "Charizard (Black Dot Error)"},
@@ -82,6 +87,10 @@ func TestResolve(t *testing.T) {
 			card.StatusUnmatched, "", "", "name mismatch"},
 		{"two cards share number and name", r("Twin", "Base Set", "10/102", "Normal", "English"), nil,
 			card.StatusAmbiguous, "", "", "match"},
+		{"accent in expansion name", r("Bulbasaur", "Pokémon GO", "1/78", "Normal", "English"), nil,
+			card.StatusResolved, "pk_go1", card.VariantNormal, ""},
+		{"accent in card name", r("Pokémon Catcher", "Crown Zenith", "138/159", "Reverse Holo", "English"), nil,
+			card.StatusResolved, "pk_catch", card.VariantReverseHolo, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

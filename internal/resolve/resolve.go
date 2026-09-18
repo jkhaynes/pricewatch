@@ -158,8 +158,13 @@ func (r *Resolver) cardsIn(ctx context.Context, setID string) ([]card.SourceCard
 	return cs, nil
 }
 
+// unaccent folds the accents TCG Collector uses and PokeWallet drops ("Pokémon"
+// vs "Pokemon"). A replacer, not Unicode normalisation: golang.org/x/text is not
+// an approved dependency, and "é" is the only accent seen in the real data.
+var unaccent = strings.NewReplacer("é", "e", "É", "E")
+
 func normExpansion(s string) string {
-	return card.Normalize(strings.ReplaceAll(s, "&", " and "))
+	return card.Normalize(unaccent.Replace(strings.ReplaceAll(s, "&", " and ")))
 }
 
 func normNumber(s string) string {
@@ -179,7 +184,7 @@ func normName(s string) string {
 			return unicode.ToLower(r)
 		}
 		return -1 // drop
-	}, s)
+	}, unaccent.Replace(s))
 }
 
 func LoadOverrides(rd io.Reader) (map[string]string, error) {
