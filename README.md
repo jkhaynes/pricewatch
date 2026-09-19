@@ -140,9 +140,8 @@ itself against PokéWallet's own count of what's left (PRD DD-11):
 - **Condition:** prices are TCGplayer market prices, and the condition column is ignored.
 - **Special prints:** ball-pattern and Energy reverse holos, Cosmos, Prize Pack, stamps and
   promos (about 9% of the author's collection) are reported as `unsupported variant`.
-- **Retries and a second source:** retry with backoff, a second source (TCGdex), value
-  weighting and scheduled runs are phase 2. See PRD sections 10 and 13 for the roadmap and
-  future ideas.
+- **Retries, value weighting and scheduled runs** are phase 2. A second source (TCGdex) is a
+  future idea. See PRD sections 10 and 13 for the roadmap and future ideas.
 
 ## Adding a price source
 

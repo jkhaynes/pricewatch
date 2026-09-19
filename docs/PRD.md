@@ -80,7 +80,7 @@ keep the project honest, not enough to justify building for them.
 | FR-7 | Report cards whose price changed since that card's previous observation, not since the previous run | P0 |
 | FR-8 | Ctrl-C cancels cleanly without dropping in-flight work | P0 |
 | FR-9 | Retry transient failures with backoff | P1 |
-| FR-10 | A second price source implementation, swappable by flag | P1 |
+| FR-10 | A second price source implementation, swappable by flag. Moved out of phase 2 to section 13, idea 5 (2026-09-19) | Idea |
 | FR-10a | Weight check priority by card value, so a $400 card is checked more often than a $0.06 one | P1 |
 | FR-11 | Durable job queue with acks, retry and dead-lettering | P2 |
 | FR-12 | Publish price events consumed independently by persister, mover detector and notifier | P2 |
@@ -425,8 +425,9 @@ in the first few minutes.
 
 **Phase 1, v1.** FR-1 through FR-8. Complete and useful on its own.
 
-**Phase 2, v1.1.** FR-9, FR-10, FR-10a, FR-14. Retry with backoff, second source,
-value-weighted priority, and unattended scheduled runs through the OS scheduler (DD-9).
+**Phase 2, v1.1.** FR-9, FR-10a, FR-14. Retry with backoff, value-weighted priority, and
+unattended scheduled runs through the OS scheduler (DD-9). A second price source (FR-10) is
+no longer part of this phase; it is a future idea (section 13, idea 5).
 
 **Phase 3, v2.** FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event fan-out
 to independent consumers, Discord notification. This is the phase that addresses the
@@ -444,9 +445,10 @@ Each phase leaves something complete.
 ### Resolved
 
 - **Which price source.** pokemontcg.io is deprecated: new registrations closed, existing keys
-  work only through 2027-03-01. **PokeWallet is the primary source and TCGdex is the second
-  implementation (FR-10)**; see "which source handles variants best" below. pokemontcg.io is
-  not planned as a source, because its keys stop working in 2027.
+  work only through 2027-03-01. **PokeWallet is the primary source.** TCGdex is the best
+  candidate for a second source, which is now a future idea (section 13, idea 5); see "which
+  source handles variants best" below. pokemontcg.io is not planned as a source, because its
+  keys stop working in 2027.
 - **Where the card list comes from.** A TCG Collector collection export.
 - **Collection scale.** Roughly 8,000 to 9,000 rows.
 - **Which source handles variants best.** Both separate variants. They resell the same
@@ -459,7 +461,8 @@ Each phase leaves something complete.
   - Its limits (100 per hour, 1,000 per day) are real, published and enforced, which makes
     it the honest fit for DD-4.
   - TCGdex's per-card `variants` flags proved unreliable, so only the price keys are trusted.
-  - TCGdex, with no published limit, is the planned second source (FR-10).
+  - TCGdex, with no published limit, is the best candidate for a second source (section 13,
+    idea 5).
   - A variant must match exactly one of the source's price sub-types. None or several is
     reported, never guessed (DD-5).
 - **Whether to price by condition (v1).** No. v1 records the TCGplayer market price only, and
@@ -536,6 +539,23 @@ did for the dashboard.
    Candidates: round-number ceilings, a market price outside the observation's own low and
    high, or a jump beyond a threshold. Flagged prices would still be stored, never silently
    dropped or corrected, so no data is lost and the decision stays visible.
+
+5. **A second price source (formerly FR-10, moved out of phase 2 on 2026-09-19).** TCGdex is
+   the natural candidate: free, no key, no published limit, and it separates variants
+   through its `pricing.tcgplayer` keys (verified live on 2026-09-18).
+   - **Why it might be worth it:** it may sell the plain print of the 356 cards for which
+     PokeWallet lists only a ball-pattern product, and it could cross-check PokeWallet's
+     prices.
+   - **Known limits:** it cannot price Base Set 1st Edition or Shadowless, and its per-card
+     `variants` flags are unreliable, so only the price keys may be trusted.
+   - **What is already in place:** the provider seam (DD-1). Adding a source is one package
+     under `internal/source/` implementing `Sets`, `Cards` and `Quote`, plus one registry
+     line. The phase 1 plan's appendix, "adding a provider", walks through TCGdex. `card_map`
+     keeps each source's mappings separately, and observations are keyed by collection key,
+     so price history stays continuous across sources.
+   - **What it would need:** its own overrides file, because set IDs differ between sources,
+     and a re-import with `--source tcgdex`. Idea 3 (mapping by TCGplayer product ID) would
+     make that re-import cheaper and more reliable.
 
 ## Appendix A: price source comparison
 
