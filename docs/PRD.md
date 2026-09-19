@@ -439,6 +439,38 @@ did for the dashboard.
 
    The export already carries the condition, so no new data is needed on the collection side.
 
+2. **Special-print variants.** About 800 export rows (9%) are excluded in phase 1 and reported
+   as `unsupported variant`:
+   - ball-pattern reverse holos: Poké Ball (219), Master Ball (46), plus Friend, Quick, Love,
+     Dusk and Rocket;
+   - Energy Reverse Holo (106);
+   - Cosmos Holo, including Prize Pack printings;
+   - Prerelease, stamped and promo variants.
+
+   TCGplayer, and so PokeWallet, probably lists the ball-pattern prints as separate products
+   (a separately named card) rather than as price sub-types of the base card. If so,
+   supporting them means teaching the resolver to find those products by name, not adding
+   rows to the variant table. Confirm how the source names a few of them before designing
+   anything. Each supported print must still match exactly one price, or be reported (DD-5).
+
+3. **Cross-provider mapping by TCGplayer product ID.** Both sources expose TCGplayer's
+   product ID:
+   - PokeWallet includes a `tcgplayer.url` ending in `/product/<id>`, even in set listings;
+   - TCGdex's `variants_detailed` carries `thirdParty.tcgplayer`.
+
+   Once the first provider has resolved a card, a second provider could be mapped by product
+   ID instead of re-matching expansion, number and name, which makes switching or adding a
+   source cheaper and more reliable. It would sit on top of the resolver, not replace it.
+   Cards without a product ID, or whose IDs disagree, still go through normal resolution and
+   are reported when they fail.
+
+4. **A price sanity bound.** Some source prices look like caps or placeholders rather than
+   market values. 1st Edition Shadowless Charizard reports exactly $10,000. A bound would
+   flag observations like that for review instead of reporting them as real moves.
+   Candidates: round-number ceilings, a market price outside the observation's own low and
+   high, or a jump beyond a threshold. Flagged prices would still be stored, never silently
+   dropped or corrected, so no data is lost and the decision stays visible.
+
 ## Appendix A: price source comparison
 
 | API | Free tier | Pricing data | Key |
