@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -124,5 +125,43 @@ func TestUnresolvedAndCountsOnlyCoverCurrentCollection(t *testing.T) {
 	}
 	if counts[card.StatusResolved] != 1 || counts[card.StatusAmbiguous] != 1 || counts[card.StatusUnmatched] != 0 {
 		t.Errorf("counts = %v", counts)
+	}
+}
+
+// The scheduled job commits pricewatch.db and nothing else (DD-13), so a clean
+// Close must leave every write in the main file, with no WAL left beside it.
+func TestClosedDatabaseFileAloneIsComplete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pw.db")
+	s, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := card.Mapping{Key: "k", Source: "pw", SourceCardID: "1", Variant: card.VariantNormal, Status: card.StatusResolved}
+	if err := s.PutMapping(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := os.Stat(path + "-wal"); !os.IsNotExist(err) {
+		t.Errorf("a WAL file is left after Close (stat err = %v)", err)
+	}
+
+	// Copy the main file alone, as the job's commit does, and read it back.
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(t.TempDir(), "copy.db")
+	if err := os.WriteFile(copyPath, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Open(t.Context(), copyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, ok, err := c.Mapping(t.Context(), "pw", "k"); err != nil || !ok {
+		t.Errorf("mapping missing from the copied file: ok=%v err=%v", ok, err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -64,12 +65,14 @@ func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger)
 	return err
 }
 
-func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Writer, log *slog.Logger) (pipeline.Summary, error) {
+func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Writer, log *slog.Logger) (sum pipeline.Summary, err error) {
 	st, err := store.Open(ctx, o.DB)
 	if err != nil {
 		return pipeline.Summary{}, err
 	}
-	defer st.Close()
+	// Closing checkpoints the WAL (DD-13). Its error must reach the caller, so the
+	// scheduled job never pushes a database that did not close cleanly.
+	defer func() { err = errors.Join(err, st.Close()) }()
 	o.Provider.Quota, o.Provider.Log = st, log
 	prov, err := newProvider(o.Source, o.Provider)
 	if err != nil {
@@ -78,7 +81,7 @@ func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Write
 
 	r := &pipeline.Runner{Store: st, Source: prov.prices, SourceName: prov.name,
 		Budget: o.Budget, Workers: o.Workers, Log: log, Policy: priority.Default, Now: o.Now}
-	sum, err := r.Run(ctx, stop)
+	sum, err = r.Run(ctx, stop)
 	if err != nil {
 		return sum, err
 	}
