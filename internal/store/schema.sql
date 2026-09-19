@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS card_map (
   PRIMARY KEY (collection_key, source) -- each provider keeps its own mappings
 );
 
+-- Stalest fetches every row of the picked source cards.
+CREATE INDEX IF NOT EXISTS idx_card_map_source_card ON card_map(source, source_card_id);
+
 CREATE TABLE IF NOT EXISTS quota (
   source TEXT NOT NULL,
   day    TEXT NOT NULL,               -- UTC date, "2026-09-18"

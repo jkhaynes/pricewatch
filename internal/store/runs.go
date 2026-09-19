@@ -51,7 +51,9 @@ func (s *SQLite) Stalest(ctx context.Context, source string, cards int) ([]card.
 		    WHERE m.source = ?1 AND m.status = 'resolved'
 		      AND EXISTS (SELECT 1 FROM collection c WHERE c.collection_key = m.collection_key)
 		),
-		picked AS (
+		-- MATERIALIZED: compute the pick once. Left to itself, SQLite sometimes
+		-- re-ran it for every card_map row, which at ~8,800 rows never finished.
+		picked AS MATERIALIZED (
 		    SELECT source_card_id,
 		           MAX(last_id IS NULL)      AS never_seen,
 		           MIN(COALESCE(last_id, 0)) AS oldest,

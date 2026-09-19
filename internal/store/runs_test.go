@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -256,5 +258,45 @@ func TestFinishRunRecordsCounts(t *testing.T) {
 	}
 	if ok != 7 || failed != 2 || finished == nil {
 		t.Errorf("ok=%d failed=%d finished=%v", ok, failed, finished)
+	}
+}
+
+// At the real collection's scale (about 8,800 rows) SQLite chose a plan that
+// re-ran the "pick the stalest cards" step once per card_map row, so a
+// --budget 5 run never got past selection (2026-09-19). Stalest must stay fast
+// at that scale for any budget.
+func TestStalestIsFastAtCollectionScale(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	const n = 8000
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range n {
+		key := fmt.Sprintf("international|set %d|%d/200|normal|english", i/200, i%200)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collection (collection_key, tcg_region, card_name, card_number, expansion, variant, tcgc_price)
+			VALUES (?, 'International', 'Card', '1/1', 'Set', 'Normal', ?)`, key, float64(i%97)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO card_map (collection_key, source, source_card_id, variant, status)
+			VALUES (?, 'pw', ?, 'normal', 'resolved')`, key, fmt.Sprintf("pk_%d", i/2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	for _, budget := range []int{1, 5, 100, 1000} {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		start := time.Now()
+		ms, err := s.Stalest(ctx, "pw", budget)
+		cancel()
+		if err != nil {
+			t.Fatalf("Stalest(budget %d) after %v: %v", budget, time.Since(start).Round(time.Millisecond), err)
+		}
+		if want := min(2*budget, n); len(ms) != want {
+			t.Errorf("Stalest(budget %d) = %d rows, want %d (two keys per source card)", budget, len(ms), want)
+		}
 	}
 }
