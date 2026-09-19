@@ -39,40 +39,59 @@ func (s *SQLite) Save(ctx context.Context, runID int64, o card.Observation) erro
 	return nil
 }
 
-func (s *SQLite) Stalest(ctx context.Context, source string, cards int) ([]card.Mapping, error) {
+// Candidates returns every source card a run might price at source, one per
+// source card, with what due-date scheduling needs (DD-12). Choosing among
+// them is priority.Due's job, not the database's.
+func (s *SQLite) Candidates(ctx context.Context, source string) ([]card.Candidate, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		WITH live AS (
-		    SELECT m.collection_key, m.source_card_id, o.last_id,
-		           (SELECT MAX(c.tcgc_price) FROM collection c
-		             WHERE c.collection_key = m.collection_key) AS value
-		    FROM card_map m
-		    LEFT JOIN (SELECT card_id, MAX(id) AS last_id FROM observations GROUP BY card_id) o
-		           ON o.card_id = m.collection_key
-		    WHERE m.source = ?1 AND m.status = 'resolved'
-		      AND EXISTS (SELECT 1 FROM collection c WHERE c.collection_key = m.collection_key)
-		),
-		-- MATERIALIZED: compute the pick once. Left to itself, SQLite sometimes
-		-- re-ran it for every card_map row, which at ~8,800 rows never finished.
-		picked AS MATERIALIZED (
-		    SELECT source_card_id,
-		           MAX(last_id IS NULL)      AS never_seen,
-		           MIN(COALESCE(last_id, 0)) AS oldest,
-		           MAX(COALESCE(value, 0))   AS value  -- DD-8: a card is worth its most valuable variant
-		    FROM live
-		    GROUP BY source_card_id
-		    ORDER BY never_seen DESC, oldest, value DESC, source_card_id
-		    LIMIT ?2
-		)
-		SELECT `+mappingCols+`
+		SELECT `+mappingCols+`, o.observed_at, o.market_price,
+		       (SELECT MAX(c.tcgc_price) FROM collection c WHERE c.collection_key = m.collection_key)
 		FROM card_map m
-		JOIN picked p ON p.source_card_id = m.source_card_id
-		WHERE m.source = ?1 AND m.status = 'resolved'
+		LEFT JOIN observations o ON o.id = (
+		    SELECT MAX(p.id) FROM observations p WHERE p.card_id = m.collection_key)
+		WHERE m.source = ? AND m.status = 'resolved'
 		  AND EXISTS (SELECT 1 FROM collection c WHERE c.collection_key = m.collection_key)
-		ORDER BY p.never_seen DESC, p.oldest, p.value DESC, m.source_card_id, m.collection_key`, source, cards)
+		ORDER BY m.source_card_id, m.collection_key`, source)
 	if err != nil {
-		return nil, fmt.Errorf("query stalest: %w", err)
+		return nil, fmt.Errorf("query candidates: %w", err)
 	}
-	return collectMappings(rows)
+	defer rows.Close()
+
+	var out []card.Candidate
+	for rows.Next() {
+		var m card.Mapping
+		var variant, status string
+		var observed *time.Time
+		var market, export *float64
+		if err := rows.Scan(&m.Key, &m.Source, &m.SourceCardID, &variant, &status, &m.Reason,
+			&observed, &market, &export); err != nil {
+			return nil, fmt.Errorf("scan candidate: %w", err)
+		}
+		m.Variant, m.Status = card.Variant(variant), card.Status(status)
+
+		if n := len(out); n == 0 || out[n-1].SourceCardID != m.SourceCardID {
+			out = append(out, card.Candidate{SourceCardID: m.SourceCardID})
+		}
+		c := &out[len(out)-1]
+		c.Keys = append(c.Keys, m)
+
+		value := 0.0
+		if export != nil {
+			value = *export
+		}
+		if observed == nil {
+			c.NeverSeen = true
+		} else {
+			if c.LastChecked.IsZero() || observed.Before(c.LastChecked) {
+				c.LastChecked = *observed
+			}
+			if market != nil {
+				value = *market
+			}
+		}
+		c.Value = max(c.Value, value)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLite) Changes(ctx context.Context, runID int64) ([]card.Change, error) {
