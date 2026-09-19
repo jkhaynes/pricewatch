@@ -29,7 +29,7 @@ func cmdImport(ctx context.Context, args []string, out io.Writer, log *slog.Logg
 	var o importOpts
 	fs.StringVar(&o.DB, "db", "pricewatch.db", "SQLite database path")
 	fs.StringVar(&o.Source, "source", pokewallet.Name, "price source")
-	fs.StringVar(&o.Overrides, "expansions", "", "optional CSV of expansion,set_id overrides")
+	fs.StringVar(&o.Overrides, "expansions", "", "optional CSV of expansion,set_id[,number_prefix] overrides")
 	fs.StringVar(&o.Provider.BaseURL, "base-url", "", "override the source's API base URL")
 	fs.DurationVar(&o.Provider.Timeout, "timeout", 15*time.Second, "per-request timeout")
 	if err := fs.Parse(args); err != nil {
@@ -60,7 +60,7 @@ func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slo
 		fmt.Fprintf(out, "skipped row: %v\n", e)
 	}
 
-	overrides := map[string]string{}
+	var overrides []resolve.Override
 	if o.Overrides != "" {
 		of, err := os.Open(o.Overrides)
 		if err != nil {

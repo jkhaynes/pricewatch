@@ -3,6 +3,7 @@ package resolve
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,6 +35,11 @@ func newFake() *fakeCatalog {
 			// PokeWallet spells these without the accent (checked live, 2026-09-18).
 			{ID: "3064", Names: []string{"Pokemon GO"}},
 			{ID: "17688", Names: []string{"Crown Zenith"}},
+			// Shapes seen in the real import (2026-09-19).
+			{ID: "1914", Names: []string{"SM - Celestial Storm", "Celestial Storm"}},
+			{ID: "24326", Names: []string{"SV: White Flare", "White Flare"}},
+			{ID: "2754", Names: []string{"Shining Fates"}},
+			{ID: "2781", Names: []string{"Shining Fates: Shiny Vault"}},
 		},
 		cards: map[string][]card.SourceCard{
 			"1393":  {{ID: "pk_59", Number: "59", Name: "Mudkip"}},
@@ -43,9 +49,19 @@ func newFake() *fakeCatalog {
 			"604": {
 				{ID: "pk_zard", Number: "004", Name: "Charizard"},
 				{ID: "pk_dot", Number: "004", Name: "Charizard (Black Dot Error)"},
+				{ID: "pk_zfa", Number: "004", Name: "Charizard (Full Art)", Aliases: []string{"Charizard"}},
 				{ID: "pk_x1", Number: "010", Name: "Twin"},
 				{ID: "pk_x2", Number: "010", Name: "Twin"},
 			},
+			"1914": {
+				{ID: "pk_wh117", Number: "117", Name: "Whismur (117)", Aliases: []string{"Whismur"}},
+				{ID: "pk_wh116", Number: "116", Name: "Whismur (116)", Aliases: []string{"Whismur"}},
+				{ID: "pk_fa", Number: "150", Name: "Guzma (Full Art)", Aliases: []string{"Guzma"}},
+				{ID: "pk_sr", Number: "150", Name: "Guzma (Secret)", Aliases: []string{"Guzma"}},
+			},
+			"24326": {{ID: "pk_pat", Number: "014", Name: "Pansear (Poke Ball Pattern)"}},
+			"2754":  {{ID: "pk_sf12", Number: "012", Name: "Rillaboom V"}},
+			"2781":  {{ID: "pk_sv86", Number: "SV086", Name: "Galarian Meowth"}},
 		},
 		cardCalls: map[string]int{},
 	}
@@ -59,7 +75,7 @@ func TestResolve(t *testing.T) {
 	tests := []struct {
 		name        string
 		row         card.Row
-		overrides   map[string]string
+		overrides   []Override
 		wantStatus  card.Status
 		wantID      string
 		wantVariant card.Variant
@@ -71,7 +87,7 @@ func TestResolve(t *testing.T) {
 			card.StatusResolved, "pk_t1", card.VariantNormal, ""},
 		{"name disambiguates a shared number", r("Charizard", "Base Set", "4/102", "Holo", "English"), nil,
 			card.StatusResolved, "pk_zard", card.VariantHolo, ""},
-		{"override wins", r("Mudkip", "EX Ruby & Sapphire", "59/109", "Normal", "English"), map[string]string{"EX Ruby & Sapphire": "1393"},
+		{"override wins", r("Mudkip", "EX Ruby & Sapphire", "59/109", "Normal", "English"), []Override{{Expansion: "EX Ruby & Sapphire", SetID: "1393"}},
 			card.StatusResolved, "pk_59", card.VariantNormal, ""},
 		{"unknown expansion suggests, does not guess", r("Mudkip", "EX Ruby & Sapphire", "59/109", "Normal", "English"), nil,
 			card.StatusUnmatched, "", "", `unknown expansion "EX Ruby & Sapphire" (candidates: 1393`},
@@ -91,6 +107,29 @@ func TestResolve(t *testing.T) {
 			card.StatusResolved, "pk_go1", card.VariantNormal, ""},
 		{"accent in card name", r("Pokémon Catcher", "Crown Zenith", "138/159", "Reverse Holo", "English"), nil,
 			card.StatusResolved, "pk_catch", card.VariantReverseHolo, ""},
+
+		// Aliases: used only when nothing at the number matches the name exactly.
+		{"alias matches a (number) suffix", r("Whismur", "Celestial Storm", "117/168", "Normal", "English"), nil,
+			card.StatusResolved, "pk_wh117", card.VariantNormal, ""},
+		{"exact name beats an alias", r("Charizard", "Base Set", "4/102", "Holo", "English"), nil,
+			card.StatusResolved, "pk_zard", card.VariantHolo, ""},
+		{"two alias matches are ambiguous", r("Guzma", "Celestial Storm", "150/168", "Normal Holo", "English"), nil,
+			card.StatusAmbiguous, "", "", "match"},
+		{"a pattern print gets no alias", r("Pansear", "White Flare", "014/086", "Normal", "English"), nil,
+			card.StatusUnmatched, "", "", "name mismatch"},
+
+		// Subsets: an override keyed on expansion plus number prefix routes to the subset's set.
+		{"prefix override routes a subset card", r("Galarian Meowth", "Shining Fates", "SV086/SV122", "Normal Holo", "English"),
+			[]Override{{Expansion: "Shining Fates", NumberPrefix: "SV", SetID: "2781"}},
+			card.StatusResolved, "pk_sv86", card.VariantHolo, ""},
+		{"prefixed numbers ignore leading zeros too", r("Galarian Meowth", "Shining Fates", "SV86/SV122", "Normal Holo", "English"),
+			[]Override{{Expansion: "Shining Fates", NumberPrefix: "SV", SetID: "2781"}},
+			card.StatusResolved, "pk_sv86", card.VariantHolo, ""},
+		{"prefix override leaves plain numbers alone", r("Rillaboom V", "Shining Fates", "012/072", "Normal Holo", "English"),
+			[]Override{{Expansion: "Shining Fates", NumberPrefix: "SV", SetID: "2781"}},
+			card.StatusResolved, "pk_sf12", card.VariantHolo, ""},
+		{"subset card without a prefix override is reported", r("Galarian Meowth", "Shining Fates", "SV086/SV122", "Normal Holo", "English"), nil,
+			card.StatusUnmatched, "", "", "number SV086 not in set 2754"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -132,11 +171,29 @@ func TestResolveCatalogErrorIsReturnedNotDecided(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
-	m, err := LoadOverrides(strings.NewReader("expansion,set_id\nEX Ruby & Sapphire,1393\n\"Black Star Promos, Wizards\",1418\n"))
+	// The third column, number_prefix, is optional per line.
+	in := "expansion,set_id,number_prefix\n" +
+		"EX Ruby & Sapphire,1393\n" +
+		"\"Black Star Promos, Wizards\",1418\n" +
+		"Shining Fates,2781,SV\n"
+	got, err := LoadOverrides(strings.NewReader(in))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m["EX Ruby & Sapphire"] != "1393" || m["Black Star Promos, Wizards"] != "1418" || len(m) != 2 {
-		t.Errorf("overrides = %v", m)
+	want := []Override{
+		{Expansion: "EX Ruby & Sapphire", SetID: "1393"},
+		{Expansion: "Black Star Promos, Wizards", SetID: "1418"},
+		{Expansion: "Shining Fates", SetID: "2781", NumberPrefix: "SV"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("overrides = %+v", got)
+	}
+}
+
+func TestLoadOverridesRejectsBadLines(t *testing.T) {
+	for _, in := range []string{"Base Set\n", "Base Set,604,SV,extra\n", "Base Set,,SV\n"} {
+		if _, err := LoadOverrides(strings.NewReader(in)); err == nil {
+			t.Errorf("LoadOverrides(%q) returned nil error", in)
+		}
 	}
 }
