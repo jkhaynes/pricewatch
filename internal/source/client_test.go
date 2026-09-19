@@ -268,3 +268,82 @@ func TestPacing(t *testing.T) {
 		}
 	}
 }
+
+// A 429 on a run's very first request, before any count is known, used to stop
+// the run. If its headers say the hour is spent while the day is not, the
+// client now waits out the window and retries.
+func TestHourly429IsWaitedOutAndRetried(t *testing.T) {
+	var hits atomic.Int32
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			hourHeaders(w, 0)
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":"Rate limit exceeded","message":"Hourly limit exceeded"}`))
+			return
+		}
+		hourHeaders(w, 99)
+		w.Write([]byte(`{"v":1}`))
+	})
+	c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second, HourCount: hourCount})
+	c.hour = newHourly(200 * time.Millisecond) // a short "hour" for the test
+	start := time.Now()
+	var v struct{ V int }
+	if err := c.GetJSON(t.Context(), "/x", &v); err != nil {
+		t.Fatalf("an hourly 429 should be waited out, got %v", err)
+	}
+	if hits.Load() != 2 || v.V != 1 {
+		t.Errorf("hits = %d, v = %+v; want the request retried once and decoded", hits.Load(), v)
+	}
+	if el := time.Since(start); el < 150*time.Millisecond {
+		t.Errorf("retried after %v; it must wait for the window first", el)
+	}
+}
+
+func TestA429ThatIsNotHourlyStillStops(t *testing.T) {
+	tests := []struct {
+		name   string
+		header func(w http.ResponseWriter)
+	}{
+		{"the daily allowance is spent", func(w http.ResponseWriter) {
+			hourHeaders(w, 0)
+			w.Header().Set("X-RateLimit-Limit-Day", "1000")
+			w.Header().Set("X-RateLimit-Remaining-Day", "0")
+		}},
+		{"no counts at all", func(w http.ResponseWriter) {}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hits atomic.Int32
+			base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				tt.header(w)
+				w.WriteHeader(http.StatusTooManyRequests)
+			})
+			c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100, PerDay: 1000}, Timeout: time.Second,
+				Quota: newMemQuota(), HourCount: hourCount, DayUsed: HeaderDayUsed("X-RateLimit-Limit-Day", "X-RateLimit-Remaining-Day")})
+			c.hour = newHourly(50 * time.Millisecond)
+			err := c.GetJSON(t.Context(), "/x", &struct{}{})
+			if !errors.Is(err, card.ErrRateLimited) || hits.Load() != 1 {
+				t.Errorf("err = %v after %d requests; want ErrRateLimited with no retry", err, hits.Load())
+			}
+		})
+	}
+}
+
+func TestHourlyRetriesAreCapped(t *testing.T) {
+	var hits atomic.Int32
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		hourHeaders(w, 0)
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second, HourCount: hourCount})
+	c.hour = newHourly(20 * time.Millisecond)
+	err := c.GetJSON(t.Context(), "/x", &struct{}{})
+	if !errors.Is(err, card.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited once retries run out", err)
+	}
+	if got, want := int(hits.Load()), 1+maxHourlyRetries; got != want {
+		t.Errorf("sent %d requests, want %d (one plus %d retries)", got, want, maxHourlyRetries)
+	}
+}

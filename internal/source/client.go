@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -92,7 +93,34 @@ type StatusError struct {
 
 func (e *StatusError) Error() string { return fmt.Sprintf("GET %s: HTTP %d", e.Path, e.Code) }
 
+// maxHourlyRetries bounds how many times one request waits out an hourly 429.
+// Each retry can mean an hour's wait, so a misbehaving server cannot hold a
+// run forever.
+const maxHourlyRetries = 3
+
+// hourlyLimited marks a 429 whose headers say the hour is spent while the day
+// is not: worth waiting out. It unwraps to the ErrRateLimited error, so callers
+// that see it after the retries run out still get card.ErrRateLimited.
+type hourlyLimited struct{ err error }
+
+func (e *hourlyLimited) Error() string { return e.err.Error() }
+func (e *hourlyLimited) Unwrap() error { return e.err }
+
+// GetJSON fetches path and decodes it into v. An hourly 429 is waited out and
+// retried (DD-11); every other failure is returned as is.
 func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
+	for attempt := 0; ; attempt++ {
+		err := c.getOnce(ctx, path, v)
+		var hl *hourlyLimited
+		if !errors.As(err, &hl) || attempt == maxHourlyRetries {
+			return err
+		}
+		// getOnce recorded "none left this hour", so the next attempt's
+		// awaitHour waits for the window before sending again.
+	}
+}
+
+func (c *Client) getOnce(ctx context.Context, path string, v any) error {
 	day := c.now().UTC().Format(time.DateOnly)
 	if c.cfg.Limits.PerDay > 0 && c.cfg.Quota != nil {
 		used, err := c.cfg.Quota.QuotaUsed(ctx, c.cfg.Name, day)
@@ -153,7 +181,11 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
 		return fmt.Errorf("GET %s: %w", path, card.ErrNotFound)
 	case resp.StatusCode == http.StatusTooManyRequests:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512)) // detail only; the status is what matters
-		return fmt.Errorf("GET %s: %s: %w", path, body, card.ErrRateLimited)
+		err := fmt.Errorf("GET %s: %s: %w", path, body, card.ErrRateLimited)
+		if c.hourSpentDayNot(resp.Header) {
+			return &hourlyLimited{err: err}
+		}
+		return err
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		return &StatusError{Code: resp.StatusCode, Path: path}
 	}
@@ -161,6 +193,23 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil
+}
+
+// hourSpentDayNot reports whether a 429's headers show this hour's allowance
+// used up while the day still has room. Only then is waiting worthwhile.
+func (c *Client) hourSpentDayNot(h http.Header) bool {
+	if c.hour == nil {
+		return false
+	}
+	if _, remaining, ok := c.cfg.HourCount(h); !ok || remaining > 0 {
+		return false
+	}
+	if c.cfg.DayUsed != nil && c.cfg.Limits.PerDay > 0 {
+		if used, ok := c.cfg.DayUsed(h); ok && used >= c.cfg.Limits.PerDay {
+			return false // the day is spent too: waiting an hour would not help
+		}
+	}
+	return true
 }
 
 // awaitHour reserves a request against the hourly count, pausing for the

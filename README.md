@@ -130,8 +130,10 @@ itself against PokéWallet's own count of what's left (PRD DD-11):
   interrupts the pause as usual.
 - The daily count is stored in the database and corrected from the response headers, so
   restarts can't overspend it.
-- When the daily limit is reached, or PokéWallet answers "too many requests", the run stops
-  cleanly and the remaining cards are deferred.
+- If a command starts while the hour is already used up, PokéWallet's first answer is "too
+  many requests". pricewatch reads the hourly count from that answer, waits out the hour and
+  carries on, so re-running a command is always safe.
+- When the daily limit is reached, the run stops cleanly and the remaining cards are deferred.
 
 ## What phase 1 does not do
 

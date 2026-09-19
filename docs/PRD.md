@@ -360,7 +360,13 @@ source reports its hourly count in response headers (PokeWallet sends
 
 The daily quota is unchanged: it stays durable, in SQLite, and synced from headers. A 429
 still stops dispatch cleanly and defers the remaining cards. That is the backstop if the
-count is ever wrong.
+count is ever wrong, with one exception.
+
+**An hourly 429 is waited out.** A process starting mid-hour sends one request before it
+knows the count. If the hour is already spent, that request draws a 429. When the 429's own
+headers say the hour is spent but the day is not, the client records "none left", waits out
+the window, and retries the same request, up to 3 times. A daily-limit 429, or one carrying
+no counts, still stops dispatch immediately, so re-running a command is always safe.
 
 **Header semantics belong to the provider.** The shared client expects the count left
 *after* the request that carries the headers. PokeWallet reports the count from *before*
