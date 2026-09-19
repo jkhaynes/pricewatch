@@ -53,7 +53,8 @@ the README.
 - Not a web application, API, or UI. The one planned exception is phase 4's local, read-only
   dashboard (DD-10), which changes none of the other non-goals
 - Not a general TCG platform. Pokémon only, one source at a time
-- No authentication, multi-user support, or hosting
+- No authentication, multi-user support, or hosting. The one exception is DD-13's scheduled
+  batch job on the author's own GitHub account, which serves nothing and nobody else
 - Not optimizing for coverage or completeness over learning
 
 ## 5. Users
@@ -288,11 +289,10 @@ expensive one. Checking valuable cards more often remains the phase 2 refinement
 
 ### DD-9: Scheduling is an external trigger; the database stays the source of truth
 
-**Decision:** in phase 2, unattended runs are started by the operating system's scheduler
-(Windows Task Scheduler, or cron elsewhere) running `pricewatch run`. Pricewatch gains no
-daemon of its own. Runs must not overlap. A run that finds another still open exits without
-selecting work, and the scheduled task also disallows parallel instances. Each run appends
-its report to a log file, since nobody reads its terminal. In phase 3 the same scheduler
+**Decision:** in phase 2, unattended runs are started by an external scheduler (a GitHub
+Actions cron, DD-13) running `pricewatch run`. Pricewatch gains no daemon of its own. Runs
+must not overlap, and the scheduler is what prevents it. Each run's report goes to the
+scheduler's logs, since nobody reads its terminal. In phase 3 the same scheduler
 triggers the producer that queues the stalest cards, and the RabbitMQ consumer runs
 continuously.
 
@@ -307,23 +307,18 @@ easy to inspect.
 - Smaller, frequent runs spread the daily allowance best.
 - The durable quota stops any excess regardless.
 
-**Concrete shape (decided 2026-09-19, for phase 2):**
-- **Hourly scheduled runs that end themselves.** Task Scheduler starts
+**Concrete shape (decided 2026-09-19, for phase 2; the trigger is DD-13's):**
+- **Hourly scheduled runs that end themselves.** A GitHub Actions cron starts
   `pricewatch run --no-wait --budget 100` shortly after each hour. With value weighting
-  (DD-12), a run prices only the cards that are due, which is about 25 to 35 per hour, then
+  (DD-12), a run prices only the cards that are due, which is about 35 to 40 per hour, then
   exits.
 - **`--no-wait`.** When the hour's allowance is spent, the run does not pause (DD-11). It
   finishes what is in flight, reports the rest as deferred, and exits, so it can never run
   into the next scheduled run. Interactive runs keep the waiting behaviour.
-- **A lock with a heartbeat.** Instead of reading "an open run", which a crash would leave
-  open forever, `import` and `run` each take a single lock row in SQLite and refresh its
-  heartbeat every 30 seconds. A second command refuses to start while the heartbeat is fresh
-  (under 2 minutes old), and takes the lock over once it has gone stale. Task Scheduler's
-  "do not start a new instance" setting is the second layer.
-- **`--log <file>`.** It appends the report and the logs, with a timestamped header per
-  command, because nobody reads a scheduled task's console.
-- **The Task Scheduler entry** is documented in the README as a copy-and-paste PowerShell
-  `Register-ScheduledTask` command.
+- **No overlap, without a lock in pricewatch.** The workflow's `concurrency` group queues a
+  second run behind the first instead of running them side by side. The heartbeat lock and
+  `--log` considered for a local scheduler are dropped: the runner is the only writer of its
+  database copy, and the workflow keeps each run's logs.
 
 **Phase 3 experiment, not a commitment:** broker-side rescheduling, where a priced card is
 republished with a TTL and dead-lettered back into the work queue when it is due, is a
@@ -431,16 +426,15 @@ in the first few minutes.
 dates by value tier**.
 - **A card's value** is its most valuable collection row. For each row that is the latest
   observed market price, falling back to the export snapshot (DD-6) until the row has one.
-- **Its tier** sets how often it is re-checked, using the Balanced schedule:
+- **Its tier** sets how often it is re-checked. There are four tiers, and **no card waits
+  longer than a week**:
 
   | Value | Checked every |
   |---|---|
   | $100 or more | 1 day |
   | $20 to $100 | 2 days |
   | $5 to $20 | 4 days |
-  | $1 to $5 | 7 days |
-  | $0.25 to $1 | 14 days |
-  | under $0.25 | 30 days |
+  | under $5 | 7 days |
 
 - **A card is due** once its oldest-checked row was last checked at least its interval ago,
   less one hour of slack. The slack stops an hourly schedule from drifting an hour later each
@@ -451,13 +445,60 @@ dates by value tier**.
 
 **Rationale:** the value is concentrated. Of 4,938 priceable cards, 335 (7%) hold 74% of the
 export value. Uniform staleness re-checked a $400 card no more often than a $0.06 one, about
-every 5.5 days. The Balanced tiers need about 641 requests a day, which leaves about 360 of
-PokeWallet's 1,000 for imports and manual runs. Stopping early keeps every tier on schedule
-and saves requests instead of spending them on cards whose price has had no time to move.
+every 5.5 days. The weekly ceiling is a deliberate floor on freshness: checking every card at
+least weekly costs about 705 requests a day on its own, and the four tiers need about 915,
+which leaves about 85 of PokeWallet's 1,000 for imports and manual runs.
+- **The cost is slow catch-up.** A missed day, for example with the laptop off, puts about
+  915 checks behind, and 85 spare a day clears that in roughly 11 days. The due order recovers
+  the most overdue cards first, with value breaking ties.
+- **If that proves too tight,** the lever is the $5 to $20 tier: checking it every 5 days frees
+  about 30 requests a day.
+
+Stopping early keeps every tier on schedule and saves requests instead of spending them on
+cards whose price has had no time to move.
 
 **What it replaces:** DD-7's pure-staleness order. DD-7's other decisions stand: a run is a
 bounded slice, progress is durable, and changes are compared against each card's own previous
 observation. DD-8's tie-breaker survives as the tie-breaker among equally due cards.
+
+### DD-13: Scheduled runs happen on GitHub Actions, from a private data repo
+
+**Decision (2026-09-19):** phase 2's scheduled runs execute on GitHub Actions, so they do
+not depend on the author's computer being on. The workflow lives in a separate **private**
+repository, `pricewatch-data`, which holds everything personal: `pricewatch.db`, the
+TCG Collector export and `expansions.csv`. The public code repo holds only a workflow
+template and setup notes.
+
+- **Trigger:** an hourly `schedule` cron a few minutes past the hour, plus
+  `workflow_dispatch` for manual runs and for `import` after a new export is committed.
+- **Build:** each job checks out this repo (`main`, or a commit the author pins) and runs
+  `go build`. No release pipeline.
+- **Import:** a manual `import` job may wait out spent hours (DD-11) instead of stopping, so
+  it gets a longer timeout. Import progress is only saved when the job finishes.
+- **State:** the database lives on a dedicated branch, `db`, as a single force-pushed commit,
+  so the repo does not grow by one database copy per hour. The job restores it, runs, and
+  pushes it back only if the command succeeded. The cloud copy is the source of truth; a
+  local copy is a read-only download.
+- **Safety of the file:** SQLite checkpoints the WAL into the main file when the store closes, so
+  the `.db` file alone is complete and nothing else needs committing.
+- **Overlap:** a workflow `concurrency` group with `cancel-in-progress: false`.
+- **Secret:** the API key is a repository secret, exposed to the job as
+  `POKEWALLET_API_KEY`. It is never echoed.
+- **Limits:** `ubuntu-latest`, `timeout-minutes` of 50 for a run and 300 for an import.
+  About 24 short jobs a day fit inside the free private-repo allowance of 2,000 minutes a
+  month.
+
+**Rationale:** it is free, needs no server, and changes nothing in pricewatch except
+`--no-wait` and the WAL checkpoint. Keeping the data in a private repo keeps personal data
+out of the public one, the same rule as `.gitignore` today.
+
+**Scope:** this narrows §4's "no hosting" non-goal to exactly this: a scheduled batch job on
+the author's own GitHub account. It adds no service, no API, no inbound traffic and no other
+users.
+
+**Known costs:** GitHub delays scheduled jobs at busy times and can drop some; DD-7's
+durable progress absorbs that. Scheduled workflows are disabled after 60 days without repo
+activity, but each run's push to `db` counts as activity.
 
 ## 9. Acceptance criteria, v1
 
@@ -477,7 +518,7 @@ observation. DD-8's tie-breaker survives as the tie-breaker among equally due ca
 **Phase 1, v1.** FR-1 through FR-8. Complete and useful on its own.
 
 **Phase 2, v1.1.** FR-10a, FR-14. Value-weighted priority, and unattended scheduled runs
-through the OS scheduler (DD-9). Two items moved out on 2026-09-19:
+on GitHub Actions (DD-9, DD-13). Two items moved out on 2026-09-19:
 - **A second price source (FR-10)** is now a future idea (section 13, idea 5).
 - **Retry with backoff (FR-9)** moved to phase 3. The phase 1 design already covers most of
   what it was for: a card that fails transiently keeps its mapping and gets no observation,
@@ -544,7 +585,9 @@ Each phase leaves something complete.
 |---|---|
 | Free API changes or disappears again | DD-1. The interface exists for exactly this |
 | Scope creep into a web UI or a product | Section 4. Non-goals are explicit. The only planned UI is phase 4's local, read-only dashboard, bounded by DD-10 and not started before phase 3 |
-| Overlapping scheduled runs price the same cards twice | DD-9. Runs refuse to start while another is open, and the scheduled task disallows parallel instances |
+| Overlapping scheduled runs price the same cards twice | DD-9, DD-13. The workflow's `concurrency` group queues runs one behind another |
+| The cloud database is lost or corrupted | DD-13. The database is pushed back only after a successful run, the WAL is checkpointed on close, and the author can download a copy at any time |
+| GitHub delays, drops or disables scheduled runs | DD-7, DD-13. Progress is durable, so a missed hour costs only that hour, and each run's push keeps the repo active |
 | Bursting overspends the hourly allowance, for example after a restart | DD-11. The server's own hourly count is the source of truth, requests are reserved before sending, and a 429 still stops dispatch cleanly |
 | Phase 3 never happens | DD-2 keeps the cost of phase 3 low, and phase 1 stands on its own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
