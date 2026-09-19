@@ -24,3 +24,6 @@
 # Editor
 .vscode/
 .idea/
+
+# Generated status page
+/site/

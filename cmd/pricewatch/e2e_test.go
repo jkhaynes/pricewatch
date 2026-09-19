@@ -57,10 +57,12 @@ func (f *fakePokeWallet) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		switch r.URL.Path {
 		case "/cards/pk_59":
-			json.NewEncoder(w).Encode(map[string]any{"tcgplayer": map[string]any{"prices": []map[string]any{
-				{"sub_type_name": "Normal", "market_price": f.normal},
-				{"sub_type_name": "Reverse Holofoil", "market_price": f.rev},
-			}}})
+			json.NewEncoder(w).Encode(map[string]any{"tcgplayer": map[string]any{
+				"url": "https://www.tcgplayer.com/product/83475",
+				"prices": []map[string]any{
+					{"sub_type_name": "Normal", "market_price": f.normal},
+					{"sub_type_name": "Reverse Holofoil", "market_price": f.rev},
+				}}})
 		case "/cards/pk_60": // Normal only: a Reverse Holo row must fail, not borrow this price
 			io.WriteString(w, `{"tcgplayer":{"prices":[{"sub_type_name":"Normal","market_price":0.1}]}}`)
 		default:
@@ -244,5 +246,30 @@ func TestNoWaitEndsTheRunWhenTheHourIsSpent(t *testing.T) {
 	// pk_59 (both Mudkip rows) is priced; pk_60 is deferred, not waited for.
 	if !errors.Is(sum.StoppedBy, card.ErrRateLimited) || sum.OK != 2 || sum.Deferred != 1 || e.fake.cardHits != 1 {
 		t.Fatalf("summary = %+v, card requests = %d\n%s", sum, e.fake.cardHits, out.String())
+	}
+}
+
+func TestSiteIsBuiltFromTheDatabase(t *testing.T) {
+	e := newEnv(t)
+	e.importWith(t, e.writeOverrides(t))
+	e.price(t, 10)
+
+	out := filepath.Join(t.TempDir(), "site")
+	var report bytes.Buffer
+	if err := buildSite(t.Context(), siteOpts{DB: e.db, Source: "pokewallet", Out: out, DailyLimit: 1000, RunMinute: 7}, &report); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(b)
+	for _, want := range []string{`"runMinute":7`, `"n":"Mudkip"`, `"total":4`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page is missing %s", want)
+		}
+	}
+	if !strings.Contains(report.String(), "index.html") {
+		t.Errorf("report = %q, want the written path", report.String())
 	}
 }

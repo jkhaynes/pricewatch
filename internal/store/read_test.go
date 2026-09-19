@@ -5,7 +5,11 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/site"
 )
+
+// Compile-time proof that the store fits the page builder's consumer-side interface.
+var _ site.Store = (*SQLite)(nil)
 
 func TestListingsDescribeEveryCollectionKey(t *testing.T) {
 	s := openTest(t)
