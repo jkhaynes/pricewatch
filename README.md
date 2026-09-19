@@ -173,87 +173,181 @@ Anything else needs a reason.
 
 ## What surprised me coming from C#
 
-<!--
-Written by the author, during the build (PRD Appendix B). The notes under each heading are
-prompts drawn from this codebase, not the section's content. Replace them with your own
-opinions, then delete the note.
--->
+Thoughts on differences between C# and GO coming from my 9 years experience as a C# backend developer.
 
 ### Errors as values
 
-<!--
-Prompts:
-- `if err != nil` everywhere. Tiring or clarifying? Compare `internal/store/sqlite.go`
-  with the equivalent try/catch.
-- Wrapping with `%w` then `errors.Is`: `ErrRateLimited` travels from `source/client.go`,
-  through `pokewallet`, into the runner's `switch`, and it stays recognisable at every layer.
-- Errors *inside* results: `card.Quote.Err` lets one request say "Normal priced, Reverse
-  Holo unavailable". What would that be in C#: a result type, or exceptions per item?
-- `errors.As` for typed errors (`*source.StatusError`) versus `catch (X e) when (...)`.
--->
+I still don’t love how repetitive `if err != nil` gets. That didn’t change by the end of the project. `internal/store/sqlite.go` has about a dozen of them in 160 lines, and most just add a little context and pass the error up:
 
-### context.Context versus CancellationToken
+```go
+if err != nil {
+    return fmt.Errorf("loading prices: %w", err)
+}
+```
 
-<!--
-Prompts:
-- It is the first parameter everywhere, by convention and by `go vet`. More or less
-  intrusive than `CancellationToken ct = default`?
-- The deadline travels *inside* the context (`context.WithTimeout` in `source/client.go`),
-  so nothing below needs a timeout parameter.
-- `context.WithoutCancel` in `pipeline/runner.go`: saving finished work after Ctrl-C. How
-  would you express "cancel the work, not the cleanup" with tokens?
-- Two stop signals, a soft `stop` channel and a hard `ctx`, for two-stage Ctrl-C.
--->
+After a while, you start skimming them—which is exactly what you don’t want to do with error handling.
+
+Still, I get why Go works this way. It makes normal failure paths explicit, and two parts of that really grew on me.
+
+**Failure is part of the signature.** `store.Open(ctx, path)` returns `(*SQLite, error)`, so I immediately know it can fail. It doesn’t tell me which errors it can return, but that’s still more than C# gives me with `Task<SqliteStore> OpenAsync(...)`. Whether that throws, and what it might throw, lives in the docs if I’m lucky or the implementation if I’m not.
+
+**Every caller has to acknowledge the error.** It can handle it, wrap it, or pass it up, but it can’t just move silently through the method. In C#, an exception can travel through several methods before anything catches it. That’s convenient, but it also makes it harder to see where a failure came from and what a piece of code might produce.
+
+Wrapping helps too. Using `fmt.Errorf("...: %w", err)` adds context as the error moves up without losing the original error. `ErrRateLimited` starts in the HTTP client, gets wrapped twice, and the runner can still recognize it with `errors.Is` and stop cleanly.
+
+Because errors are values, they also work well for partial success. One PokéWallet request can return “Normal priced, Reverse Holo unavailable” by storing an `Err` on each variant’s `Quote`. That is still a domain-specific result structure, but it lets me keep the successful data without throwing away the whole response because one part failed.
+
+Would I swap back to exceptions? No. I prefer being able to see errors enter and leave a function, even if the syntax gets repetitive. But I’d happily take a shorter way to write “if this failed, wrap it and return it.” C# already does something similar for repetitive null handling with `?.` and `??`. A little syntax like that would take most of the sting out of `if err != nil`.
+
+### `context.Context` versus `CancellationToken`
+
+At first, `context.Context` looked like `CancellationToken` with extra steps. What won me over was how Go treats cancellation and deadlines as one description of an operation’s lifetime.
+
+The shared HTTP client creates a 15-second context for each request, and everything underneath respects it. C# can do the same with a timed `CancellationTokenSource`, but the deadline itself isn’t part of the token. In Go, it travels with the context and can be inspected by anything receiving it.
+
+Passing `ctx` as the first parameter of every I/O function is noisy, but it quickly became automatic. It doesn’t feel much different from adding `CancellationToken ct = default` to every async C# method, except Go’s convention around passing it along feels much stronger.
+
+Where this really worked for the project was graceful shutdown. Because the command should be safe to stop and resume later, Ctrl-C has two stages:
+
+```go
+// First Ctrl-C
+close(stopStarting) // Finish current cards, but start no more.
+
+// Second Ctrl-C
+hardCancel() // Cancel cards still in progress.
+```
+
+The C# version would need the same two signals:
+
+```csharp
+// First Ctrl-C
+stopStarting.Cancel();
+
+// Second Ctrl-C
+hardStop.Cancel();
+```
+
+Neither language removes the need for two signals because they have different meanings. What I liked in Go was how naturally they mapped to a channel for controlling the runner and a context for cancelling its I/O.
+
+The most useful part was separating cancelled work from the save that makes resuming possible. SQLite provides the actual resumability by recording completed cards. But after a hard stop, the work context is already cancelled. Reusing it for the database write could cancel the checkpoint too.
+
+`context.WithoutCancel` lets the save ignore that cancellation while keeping the rest of the context. I then give it a new timeout so cleanup cannot run forever:
+
+```go
+saveCtx, cancel := context.WithTimeout(
+    context.WithoutCancel(workCtx),
+    5*time.Second,
+)
+defer cancel()
+
+err := store.Save(saveCtx, completedCards)
+```
+
+In C#, I would create a separate token for the save:
+
+```csharp
+using var saveTimeout =
+    new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+await store.SaveAsync(completedCards, saveTimeout.Token);
+```
+
+The Go version isn’t dramatically shorter. The benefit is that contexts made me think clearly about the different lifetimes: stop scheduling new work, cancel in-flight work, then give completed results a short independent window to save. The context didn’t create resumability, but it made it harder to accidentally cancel the checkpoint that resumability depends on.
 
 ### Goroutines and channels versus async/await and Task
 
-<!--
-Prompts:
-- `pipeline/pool.go`: `Feed` and `Work` are `Channel<T>` plus `Parallel.ForEachAsync`, as
-  language features.
-- `select`: no direct C# equivalent. `Task.WhenAny` is the nearest, and it's clumsier.
-- No coloured functions: nothing is `async`, and any function can block. Freeing, or
-  unnerving?
-- `sync.Once` to close a channel exactly once, because closing twice panics.
-- `testing/synctest`: a fake clock makes the pool tests instant and deterministic. Is there
-  an equivalent you'd reach for in .NET?
--->
+This was the part of Go I was most curious about.
+
+Go has no `async` keyword. A function runs concurrently when you start it with `go`. In C#, making one method asynchronous often means updating every method that calls it. I prefer how little the calling code changes in Go.
+
+The worker pool in `internal/pipeline/pool.go` is similar to combining `Channel<T>` with `Parallel.ForEachAsync`. The pool is not built into Go, but goroutines, channels, and `select` are. One goroutine sends jobs to a channel, workers process them, and results are sent through another channel. Closing the jobs channel tells the workers there is no more work.
+
+I especially liked `select`. It handles several possible events in one place:
+
+```go
+select {
+case jobs <- job:
+case <-stopStarting:
+    return
+case <-ctx.Done():
+    return
+}
+```
+
+This means “send the job, stop if Ctrl-C was pressed, or stop if the context was cancelled.” The closest C# equivalent I know is `Task.WhenAny`, which takes more code to set up and read.
+
+There are tradeoffs. Closing a channel twice panics, so I used `sync.Once` because multiple paths could trigger the stop. A nil channel blocks forever, although this is useful inside `select` because it disables that case. Starting a goroutine also does not return a `Task`, so results, errors, and completion must be handled with channels or synchronization such as `WaitGroup`.
+
+`testing/synctest` was also useful. It uses fake time, so tests that wait one second per job can still finish in 0.00s. It does not make all concurrent behavior deterministic, but it removes real delays and makes these tests faster and more reliable.
 
 ### Implicit interfaces, declared where they are used
 
-<!--
-Prompts:
-- `pipeline.Store`, `resolve.Catalog`, `source.Quota` and `pokewallet.Getter` are all
-  declared by the *consumer*. `*store.SQLite` satisfies two of them without naming either.
-- `var _ pipeline.Store = (*SQLite)(nil)`: the compile-time check you need *because* nothing
-  says "implements".
-- The provider registry in `cmd/pricewatch/providers.go` is a map of functions, with no DI
-  container. Did you miss one?
-- `pokewallet.Getter` lets the tests pass a map instead of an HTTP server.
--->
+This took the longest to feel natural because it is different from how I normally use interfaces in C#.
+
+In C#, I like that a class explicitly says which interfaces it implements. I also like having registrations in a DI container because it gives the application one place to manage dependencies and their lifetimes. In a larger domain, that structure makes relationships easier to find and understand.
+
+Go works differently. The consumer usually declares a small interface containing only the methods it needs. The implementation does not reference it. `*store.SQLite` satisfies both `pipeline.Store` and `source.Quota` without naming either one. The PokéWallet provider also satisfies two interfaces it does not know about.
+
+This worked well because the project is small. The interfaces are usually one to six methods and live next to the code that uses them. Reading a consumer shows exactly what it needs, and there was no reason to create a larger shared interface. C# can also use small, focused interfaces, but Go pushes the code in that direction by default.
+
+The downside is discoverability. Nothing on `SQLite` says that it implements `pipeline.Store`. Go checks the relationship when the type is used as that interface, or I can add an explicit compile time check:
+
+```go
+var _ pipeline.Store = (*SQLite)(nil)
+```
+
+I also did not need a DI container for this project. Dependencies are passed through constructors, and a map of constructor functions in `providers.go` handles the price sources. The PokéWallet provider depends on a one method HTTP interface, so tests can return canned JSON without a mocking library or HTTP server.
+
+I liked this approach here, but I would not automatically prefer it for a larger application with a more complicated domain. Manual wiring could become harder to manage, and the implicit relationships could make the system harder to navigate. For that kind of application, I still prefer C# interfaces and dependency injection because the contracts and dependency graph are more explicit.
 
 ### Struct embedding instead of inheritance
 
-<!--
-Prompts:
-- `card.Observation` embeds `card.Price`, so `obs.Market` works directly, yet an
-  Observation is not a Price.
-- `rows.Scan(&cur.Market)` reaching through the embedded field.
-- Composition that looks like inheritance at the call site. Where did it help, and where
-  would you have wanted real inheritance?
--->
+I barely used struct embedding, which reflects how simple the domain is. Go does not support class inheritance, and I did not need it for this project.
+
+The main example is `Observation`, which embeds `Price`. This promotes the fields from `Price`, so I can write `obs.Market` instead of `obs.Price.Market`. However, an `Observation` is not a `Price` and cannot be passed to a function that expects one.
+
+```go
+type Observation struct {
+    Price
+    ObservedAt time.Time
+}
+```
+
+This is composition with shorter field access. It does not provide the subtype relationship or virtual behavior that inheritance can provide in C#.
+
+Embedding also worked cleanly with the database code:
+
+```go
+rows.Scan(&cur.Market, ...)
+```
+
+The promoted field can be accessed directly, and scanning a SQL `NULL` into a `*float64` leaves it `nil`. That pointer serves the same purpose as `double?` in C#, but it did not require additional database mapping.
+
+I did not miss inheritance here because the project did not have a domain that needed class hierarchies or shared polymorphic behavior. Some of my C# hierarchies could probably have used composition instead, but that does not mean embedding replaces inheritance in every case. For this project, simple structs, embedding, and interfaces were enough.
 
 ### How far the standard library goes
 
-<!--
-Prompts:
-- CSV (`encoding/csv`), HTTP (`net/http`, `httptest`), JSON, SQL (`database/sql`), logging
-  (`log/slog`), embedding files (`//go:embed`), column alignment (`text/tabwriter`), fake
-  time (`testing/synctest`): two third-party packages in total.
-- Where it fell short: no Unicode normalisation (`golang.org/x/text` isn't approved), hence
-  the "é" replacer in `resolve.go`.
-- `go test`, `go vet`, `gofmt` and `go mod` come with the toolchain. Compare the .NET
-  equivalents (analyzers, formatters, test adapters).
-- Go map iteration order is deliberately random, hence `slices.Sorted(maps.Keys(...))`
-  wherever output must be stable.
--->
+This was one of the strongest parts of Go for me. The project has only two external dependencies: SQLite and a rate limiter. Everything else comes from the standard library:
+
+- CSV parsing with `encoding/csv`
+- HTTP clients and test servers with `net/http` and `httptest`
+- JSON with `encoding/json`
+- SQL with `database/sql`
+- Structured logging with `log/slog`
+- Embedded files with `//go:embed`
+- Report formatting with `text/tabwriter`
+- Fake time for concurrency tests with `testing/synctest`
+
+In C#, I likely would have added CsvHelper, Serilog, Moq, Polly, and a time testing package. Go already covered what this project needed.
+
+The tooling is also included. `go test`, `go vet`, `gofmt`, and `go mod` all work without choosing additional packages or installing a test adapter. I did not have to make formatting decisions because `gofmt` made them for me.
+
+There are still gaps. Unicode normalization and accent folding are not included in the standard library. Matching “Pokémon” to “Pokemon” uses a small replacement function in this project. A complete solution would require another dependency, such as `golang.org/x/text`.
+
+Map iteration order is also unspecified, so output can change between runs. I now sort map keys anywhere the order matters:
+
+```go
+slices.Sorted(maps.Keys(m))
+```
+
+Overall, I spent less time selecting and configuring libraries than I normally would in C#. For a project this size, the standard library covered almost everything I needed.
