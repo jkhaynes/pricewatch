@@ -383,12 +383,22 @@ Each phase leaves something complete.
   key becomes the second implementation.
 - **Where the card list comes from.** A TCG Collector collection export.
 - **Collection scale.** Roughly 8,000 to 9,000 rows.
+- **Which source handles variants best.** Both separate variants. They resell the same
+  TCGplayer data and matched to the cent on every card tested (2026-09-18, live requests):
+  Ruby & Sapphire Mudkip 59/109 Normal $8.22 and Reverse Holo $50.47, Neo Genesis Lugia 1st
+  Edition Holo $1,079.79 and Unlimited Holo $518.99, Neo Genesis Sunflora 1st Edition and
+  Unlimited, and Twilight Masquerade Tangela Normal and Reverse Holo. **PokeWallet is the
+  primary source.**
+  - It prices Base Set 1st Edition and Shadowless, which TCGdex cannot.
+  - Its limits (100 per hour, 1,000 per day) are real, published and enforced, which makes
+    it the honest fit for DD-4.
+  - TCGdex's per-card `variants` flags proved unreliable, so only the price keys are trusted.
+  - TCGdex, with no published limit, is the planned second source (FR-10).
+  - A variant must match exactly one of the source's price sub-types. None or several is
+    reported, never guessed (DD-5).
 
 ### Still open
 
-- **Which source handles variants best.** This matters more than rate limits. A source that
-  cannot distinguish Reverse Holo from Normal Holo is unusable here. Test both against a few
-  known multi-variant cards before committing.
 - **Whether to price by condition.** The export carries a condition column and conditions
   differ a lot in value. Simplest v1 is market price only, stated explicitly.
 - Whether graded pricing ever matters enough to justify Scrydex at $29/month.
