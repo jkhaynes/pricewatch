@@ -347,3 +347,12 @@ func TestHourlyRetriesAreCapped(t *testing.T) {
 		t.Errorf("sent %d requests, want %d (one plus %d retries)", got, want, maxHourlyRetries)
 	}
 }
+
+func TestNewPicksTheSourcesHourWindow(t *testing.T) {
+	count := func(http.Header) (int, int, bool) { return 0, 0, false }
+	rolling := New(Config{HourCount: count})
+	clock := New(Config{HourCount: count, HourWindow: ClockHour})
+	if rolling.hour.aligned || !clock.hour.aligned {
+		t.Errorf("aligned: default %v, ClockHour %v; want false, true", rolling.hour.aligned, clock.hour.aligned)
+	}
+}

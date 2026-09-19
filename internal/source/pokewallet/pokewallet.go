@@ -34,14 +34,15 @@ var subtypes = map[card.Variant][]string{
 
 func Config(baseURL, apiKey string, q source.Quota, timeout time.Duration) source.Config {
 	return source.Config{
-		Name:      Name,
-		BaseURL:   baseURL,
-		Header:    http.Header{"X-API-Key": {apiKey}},
-		Limits:    Limits,
-		Timeout:   timeout,
-		Quota:     q,
-		DayUsed:   dayUsed,
-		HourCount: hourCount,
+		Name:       Name,
+		BaseURL:    baseURL,
+		Header:     http.Header{"X-API-Key": {apiKey}},
+		Limits:     Limits,
+		Timeout:    timeout,
+		Quota:      q,
+		DayUsed:    dayUsed,
+		HourCount:  hourCount,
+		HourWindow: source.ClockHour, // spent at 23:29, full again at 00:06 (2026-09-18)
 	}
 }
 

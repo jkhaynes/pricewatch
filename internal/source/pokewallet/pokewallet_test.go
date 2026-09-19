@@ -202,6 +202,14 @@ func TestQuoteUnknownCardIsRequestError(t *testing.T) {
 // of 100 per hour and 1000 of 1000 per day (spike, 2026-09-18). Reading them as
 // "after" let the client send one request too many and get a 429 (2026-09-18,
 // "used 100, remaining 0"). Config converts them to "after this request".
+// Spent at 23:29 local on 2026-09-18, full again at 00:06: a rolling window
+// would still have been spent until about 00:28. PokeWallet resets on the hour.
+func TestConfigResetsOnTheClockHour(t *testing.T) {
+	if cfg := Config(DefaultBaseURL, "key", nil, time.Second); cfg.HourWindow != source.ClockHour {
+		t.Errorf("HourWindow = %v, want source.ClockHour", cfg.HourWindow)
+	}
+}
+
 func TestConfigCountsTheRequestCarryingTheHeaders(t *testing.T) {
 	cfg := Config(DefaultBaseURL, "key", nil, time.Second)
 	if cfg.HourCount == nil || cfg.DayUsed == nil {

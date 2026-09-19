@@ -39,8 +39,27 @@ type Config struct {
 	Quota     Quota                                             // nil: no daily accounting
 	DayUsed   func(http.Header) (int, bool)                     // nil: no server-side daily sync
 	HourCount func(http.Header) (limit, remaining int, ok bool) // nil: even spacing by PerHour (DD-11)
-	Log       *slog.Logger                                      // nil: pauses are not logged
+	// HourWindow says how the source counts its hour. The zero value, Rolling,
+	// is the safe default for a source whose reset time is unknown.
+	HourWindow Window
+	Log        *slog.Logger // nil: pauses are not logged
 }
+
+// Window is how a source counts its hourly allowance.
+type Window int
+
+const (
+	// Rolling covers a rolling window, or one whose reset time is unknown: a
+	// spent hour is waited out a full hour after the window's first request.
+	Rolling Window = iota
+	// ClockHour resets at the top of every UTC hour: a spent hour is waited out
+	// until the next boundary, plus clockMargin.
+	ClockHour
+)
+
+// clockMargin is the slack after an hour boundary, allowing for the difference
+// between our clock and the source's.
+const clockMargin = 30 * time.Second
 
 type Client struct {
 	cfg     Config
@@ -52,7 +71,11 @@ type Client struct {
 
 func New(cfg Config) *Client {
 	c := &Client{cfg: cfg, http: &http.Client{}, limiter: rate.NewLimiter(pacing(cfg), 1), now: time.Now}
-	if cfg.HourCount != nil {
+	switch {
+	case cfg.HourCount == nil:
+	case cfg.HourWindow == ClockHour:
+		c.hour = newClockHourly(time.Hour, clockMargin)
+	default:
 		c.hour = newHourly(time.Hour)
 	}
 	return c

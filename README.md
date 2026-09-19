@@ -125,8 +125,8 @@ PokéWallet's free plan allows **100 requests per hour and 1,000 per day**. pric
 itself against PokéWallet's own count of what's left (PRD DD-11):
 - **While requests are left this hour, they go out immediately**, at most 2 per second, so
   a 100-request run takes about a minute.
-- **Once the hour's allowance is spent, it pauses** until the hour is certainly over,
-  measured from the first request of that hour, and logs that it's waiting. Ctrl-C
+- **Once the hour's allowance is spent, it pauses** until PokéWallet's allowance resets at
+  the top of the next hour (plus 30 seconds' margin), and logs that it's waiting. Ctrl-C
   interrupts the pause as usual.
 - The daily count is stored in the database and corrected from the response headers, so
   restarts can't overspend it.

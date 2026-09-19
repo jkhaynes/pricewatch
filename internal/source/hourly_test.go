@@ -81,3 +81,59 @@ func TestHourly(t *testing.T) {
 		})
 	}
 }
+
+// A clock-hour source resets on the UTC hour, so a spent hour waits for the
+// next boundary plus a margin, measured from when the hour was found spent.
+// Observed for PokeWallet: spent at 23:29 local, full again at 00:06.
+func TestClockHourWaitsForTheNextHourBoundary(t *testing.T) {
+	const margin = 30 * time.Second
+	clock := func(h, m, s int) time.Time { return time.Date(2026, 9, 19, h, m, s, 0, time.UTC) }
+	tests := []struct {
+		name string
+		run  func(h *hourly) time.Duration
+		want time.Duration
+	}{
+		{"spent at :29 waits until :00 plus the margin", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 28, 0))
+			h.observe(clock(3, 28, 0), 100, 99)
+			h.reserve(clock(3, 29, 0))
+			h.observe(clock(3, 29, 0), 100, 0)
+			return h.reserve(clock(3, 29, 30))
+		}, 31 * time.Minute},
+		{"spent seconds before the hour waits only seconds", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 59, 50))
+			h.observe(clock(3, 59, 50), 100, 0)
+			return h.reserve(clock(3, 59, 55))
+		}, 35 * time.Second},
+		{"after a restart the wait is exact, not up to an hour too long", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 45, 0)) // this process's first request, mid-hour
+			h.observe(clock(3, 45, 0), 100, 0)
+			return h.reserve(clock(3, 45, 1))
+		}, 15*time.Minute - time.Second + margin},
+		{"spent by local reservations, before any response says so", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 10, 0))
+			h.observe(clock(3, 10, 0), 100, 1)
+			h.reserve(clock(3, 20, 0)) // the last one: nothing left locally
+			return h.reserve(clock(3, 20, 5))
+		}, 40*time.Minute - 5*time.Second + margin},
+		{"past the boundary and margin: send again and relearn", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 29, 0))
+			h.observe(clock(3, 29, 0), 100, 0)
+			return h.reserve(clock(4, 0, 30))
+		}, 0},
+		{"a spent hour from before the boundary does not follow into the next", func(h *hourly) time.Duration {
+			h.reserve(clock(3, 29, 0))
+			h.observe(clock(3, 29, 0), 100, 0)
+			h.reserve(clock(4, 1, 0)) // relearn in the new hour
+			h.observe(clock(4, 1, 0), 100, 99)
+			return h.reserve(clock(4, 2, 0))
+		}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.run(newClockHourly(time.Hour, margin)); got != tt.want {
+				t.Errorf("wait = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

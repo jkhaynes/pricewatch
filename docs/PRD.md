@@ -368,6 +368,19 @@ headers say the hour is spent but the day is not, the client records "none left"
 the window, and retries the same request, up to 3 times. A daily-limit 429, or one carrying
 no counts, still stops dispatch immediately, so re-running a command is always safe.
 
+**PokeWallet resets on the clock hour.** It sends no reset time: no `Retry-After` and no
+`X-RateLimit-Reset`. But its allowance ran out at 23:29 local on 2026-09-18 and was full
+again at 00:06. A rolling window would still have been spent until about 00:28, so the
+reset is at the top of the hour. The window type is a per-source setting:
+- **`ClockHour`** (PokeWallet) waits until the next UTC hour boundary plus 30 seconds for
+  clock differences, measured from when the hour was found spent. That is at most an hour
+  and about half an hour on average, and exact even after a restart.
+- **`Rolling`**, the default for a source whose reset is unknown, keeps the conservative
+  rule above: a full hour after the window's first request.
+
+If PokeWallet ever still reports the hour spent just after a boundary, the hourly-429 retry
+learns that, waits again, and carries on.
+
 **Header semantics belong to the provider.** The shared client expects the count left
 *after* the request that carries the headers. PokeWallet reports the count from *before*
 it: a fresh key's first response said 100 of 100. Reading that as "after" sent one request
