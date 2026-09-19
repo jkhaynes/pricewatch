@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/priority"
 )
 
 type Store interface {
 	StartRun(ctx context.Context) (int64, error)
-	Stalest(ctx context.Context, source string, cards int) ([]card.Mapping, error)
+	Candidates(ctx context.Context, source string) ([]card.Candidate, error)
 	Save(ctx context.Context, runID int64, obs card.Observation) error
 	PutMapping(ctx context.Context, m card.Mapping) error
 	FinishRun(ctx context.Context, runID int64, ok, failed int) error
@@ -27,6 +28,15 @@ type Runner struct {
 	Budget     int // requests, i.e. source cards
 	Workers    int
 	Log        *slog.Logger
+	Policy     priority.Policy  // which cards are due (DD-12); the zero Policy makes every card due
+	Now        func() time.Time // nil: time.Now
+}
+
+func (r *Runner) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 type Summary struct {
@@ -37,6 +47,7 @@ type Summary struct {
 	Failed          int
 	Abandoned       int
 	Deferred        int   // not priced this run, not a failure: stays stalest for next run
+	NotDue          int   // priceable cards not due yet: left for a later run on purpose (DD-12)
 	StoppedBy       error // ErrRateLimited or ErrQuotaExhausted, if the provider ended the run
 	NewlyUnresolved []card.Mapping
 	Changes         []card.Change
@@ -47,13 +58,19 @@ func (r *Runner) Run(ctx context.Context, stop <-chan struct{}) (Summary, error)
 	if err != nil {
 		return Summary{}, fmt.Errorf("start run: %w", err)
 	}
-	due, err := r.Store.Stalest(ctx, r.SourceName, r.Budget)
+	cands, err := r.Store.Candidates(ctx, r.SourceName)
 	if err != nil {
-		return Summary{}, fmt.Errorf("select stalest: %w", err)
+		return Summary{}, fmt.Errorf("load candidates: %w", err)
+	}
+	picked, dueCount := priority.Due(cands, r.now(), r.Budget, r.Policy)
+	var due []card.Mapping
+	for _, c := range picked {
+		due = append(due, c.Keys...)
 	}
 	jobs := group(due)
-	sum := Summary{RunID: runID, Keys: len(due)}
-	r.Log.Info("run started", "run", runID, "requests", len(jobs), "keys", len(due), "workers", r.Workers)
+	sum := Summary{RunID: runID, Keys: len(due), NotDue: len(cands) - dueCount}
+	r.Log.Info("run started", "run", runID, "requests", len(jobs), "keys", len(due),
+		"due", dueCount, "not_due", sum.NotDue, "workers", r.Workers)
 
 	// halt stops dispatch; either the caller's stop or a provider limit can trigger it.
 	halted := make(chan struct{})
@@ -126,7 +143,7 @@ func (r *Runner) handle(ctx, persist context.Context, runID int64, res Result, s
 		return
 	}
 
-	now := time.Now()
+	now := r.now()
 	for i, q := range res.Quotes {
 		key := res.Job.Targets[i].Key
 		switch {

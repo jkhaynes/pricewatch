@@ -155,8 +155,14 @@ func TestUnknownSourceIsAnError(t *testing.T) {
 
 func (e *env) price(t *testing.T, budget int) pipeline.Summary {
 	t.Helper()
+	return e.priceAt(t, budget, time.Now)
+}
+
+func (e *env) priceAt(t *testing.T, budget int, now func() time.Time) pipeline.Summary {
+	t.Helper()
 	var out bytes.Buffer
-	sum, err := priceRun(t.Context(), nil, runOpts{DB: e.db, Source: "pokewallet", Budget: budget, Workers: 2, Provider: e.prov}, &out, quiet)
+	sum, err := priceRun(t.Context(), nil, runOpts{DB: e.db, Source: "pokewallet", Budget: budget, Workers: 2,
+		Provider: e.prov, Now: now}, &out, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,9 +180,11 @@ func TestRunIsASliceThatContinuesAndReportsPerCardChanges(t *testing.T) {
 		t.Fatalf("run 1 = %+v", s1)
 	}
 
-	// Continues: pk_60 was never seen. Its Reverse Holo is not offered, so it is reported, not guessed.
-	s2 := e.price(t, 1)
-	if s2.Requests != 1 || s2.OK != 0 || len(s2.NewlyUnresolved) != 1 {
+	// Continues, and stops early: pk_60 was never priced so it is due; pk_59 was just
+	// priced so it is not, even though the budget of 10 has room for it.
+	// pk_60's Reverse Holo is not offered, so it is reported, not guessed.
+	s2 := e.price(t, 10)
+	if s2.Requests != 1 || s2.OK != 0 || len(s2.NewlyUnresolved) != 1 || s2.NotDue != 1 {
 		t.Fatalf("run 2 = %+v", s2)
 	}
 	if u := s2.NewlyUnresolved[0]; !strings.Contains(u.Key, "60/109|reverse holo") || u.Status != card.StatusUnmatched {
@@ -185,7 +193,9 @@ func TestRunIsASliceThatContinuesAndReportsPerCardChanges(t *testing.T) {
 
 	e.fake.set(func(f *fakePokeWallet) { f.rev = 60.00 }) // reverse holo moves; normal does not
 
-	s3 := e.price(t, 10) // pk_60 is out of rotation now
+	// Ten days on, pk_59 (worth $50.47 at its best row, so re-checked every 2 days) is due again.
+	later := func() time.Time { return time.Now().Add(10 * 24 * time.Hour) }
+	s3 := e.priceAt(t, 10, later) // pk_60 is out of rotation now
 	if s3.Requests != 1 || s3.OK != 2 {
 		t.Fatalf("run 3 = %+v", s3)
 	}

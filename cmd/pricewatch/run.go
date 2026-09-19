@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/pipeline"
+	"github.com/jkhaynes/pricewatch/internal/priority"
 	"github.com/jkhaynes/pricewatch/internal/source/pokewallet"
 	"github.com/jkhaynes/pricewatch/internal/store"
 )
@@ -20,6 +21,7 @@ type runOpts struct {
 	DB, Source      string
 	Budget, Workers int
 	Provider        providerOpts
+	Now             func() time.Time // nil: time.Now; tests move the clock
 }
 
 func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger) error {
@@ -74,14 +76,14 @@ func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Write
 	}
 
 	r := &pipeline.Runner{Store: st, Source: prov.prices, SourceName: prov.name,
-		Budget: o.Budget, Workers: o.Workers, Log: log}
+		Budget: o.Budget, Workers: o.Workers, Log: log, Policy: priority.Default, Now: o.Now}
 	sum, err := r.Run(ctx, stop)
 	if err != nil {
 		return sum, err
 	}
 
-	fmt.Fprintf(out, "run %d (%s): %d requests, %d cards: ok %d, failed %d, abandoned %d, deferred %d\n",
-		sum.RunID, prov.name, sum.Requests, sum.Keys, sum.OK, sum.Failed, sum.Abandoned, sum.Deferred)
+	fmt.Fprintf(out, "run %d (%s): %d requests, %d cards: ok %d, failed %d, abandoned %d, deferred %d; %d cards not due yet\n",
+		sum.RunID, prov.name, sum.Requests, sum.Keys, sum.OK, sum.Failed, sum.Abandoned, sum.Deferred, sum.NotDue)
 	if sum.StoppedBy != nil {
 		fmt.Fprintf(out, "stopped early: %v\n", sum.StoppedBy)
 	}

@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
+	"github.com/jkhaynes/pricewatch/internal/priority"
 )
 
 // memStore honours ctx like a real database would: a cancelled ctx fails writes.
 type memStore struct {
 	mu       sync.Mutex
 	due      []card.Mapping
+	notDue   []card.Candidate
 	saved    []card.Observation
 	mappings []card.Mapping
 	finished bool
@@ -28,20 +30,17 @@ type memStore struct {
 
 func (m *memStore) StartRun(ctx context.Context) (int64, error) { return 1, ctx.Err() }
 
-// Stalest returns whole source-card groups, up to `cards` of them, as the real store does.
-func (m *memStore) Stalest(ctx context.Context, _ string, cards int) ([]card.Mapping, error) {
-	var out []card.Mapping
-	seen := map[string]bool{}
+// Candidates turns the due mappings into never-priced candidates, grouped by
+// source card as the real store does, and adds any not-yet-due ones.
+func (m *memStore) Candidates(ctx context.Context, _ string) ([]card.Candidate, error) {
+	var out []card.Candidate
 	for _, mp := range m.due {
-		if !seen[mp.SourceCardID] {
-			if len(seen) == cards {
-				break
-			}
-			seen[mp.SourceCardID] = true
+		if n := len(out); n == 0 || out[n-1].SourceCardID != mp.SourceCardID {
+			out = append(out, card.Candidate{SourceCardID: mp.SourceCardID, NeverSeen: true})
 		}
-		out = append(out, mp)
+		out[len(out)-1].Keys = append(out[len(out)-1].Keys, mp)
 	}
-	return out, ctx.Err()
+	return append(out, m.notDue...), ctx.Err()
 }
 func (m *memStore) Save(ctx context.Context, _ int64, o card.Observation) error {
 	if err := ctx.Err(); err != nil {
@@ -249,4 +248,26 @@ func TestHardCancelStillPersistsCompletedWork(t *testing.T) {
 			t.Error("run row not closed after cancel")
 		}
 	})
+}
+
+func TestRunPricesOnlyDueCardsAndStopsEarly(t *testing.T) {
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	st := &memStore{
+		due: []card.Mapping{mapping("new", card.VariantNormal)},
+		notDue: []card.Candidate{{SourceCardID: "fresh", Keys: []card.Mapping{mapping("fresh", card.VariantNormal)},
+			LastChecked: now.Add(-time.Hour), Value: 400}}, // checked an hour ago: not due for a day
+	}
+	src := &scriptSource{}
+	r := &Runner{Store: st, Source: src, SourceName: "pw", Budget: 100, Workers: 2, Log: quiet,
+		Policy: priority.Default, Now: func() time.Time { return now }}
+	sum, err := r.Run(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.calls.Load() != 1 || sum.Requests != 1 || sum.NotDue != 1 || sum.Deferred != 0 {
+		t.Errorf("calls=%d summary=%+v; want only the due card priced and the fresh one counted as not due", src.calls.Load(), sum)
+	}
+	if len(st.saved) != 1 || !st.saved[0].ObservedAt.Equal(now) {
+		t.Errorf("saved = %+v; observations must carry the runner's clock", st.saved)
+	}
 }
