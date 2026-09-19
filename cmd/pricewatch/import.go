@@ -46,7 +46,7 @@ func cmdImport(ctx context.Context, args []string, out io.Writer, log *slog.Logg
 	return err
 }
 
-func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slog.Logger) (map[card.Status]int, error) {
+func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slog.Logger) (counts map[card.Status]int, err error) {
 	f, err := os.Open(o.CSV)
 	if err != nil {
 		return nil, fmt.Errorf("open export: %w", err)
@@ -76,7 +76,7 @@ func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slo
 	if err != nil {
 		return nil, err
 	}
-	defer st.Close()
+	defer func() { err = errors.Join(err, st.Close()) }()
 	o.Provider.Quota, o.Provider.Log = st, log
 	prov, err := newProvider(o.Source, o.Provider)
 	if err != nil {
@@ -115,7 +115,7 @@ func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slo
 	}
 	log.Info("import finished", "rows", len(rows), "row_errors", len(rowErrs), "distinct", len(seen), "decided_now", decided)
 
-	counts, err := st.MappingCounts(ctx, prov.name)
+	counts, err = st.MappingCounts(ctx, prov.name)
 	if err != nil {
 		return nil, err
 	}

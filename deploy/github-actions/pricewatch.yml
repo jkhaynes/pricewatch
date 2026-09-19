@@ -1,0 +1,85 @@
+# pricewatch on a schedule (PRD DD-9, DD-13).
+# Copy to .github/workflows/pricewatch.yml in the PRIVATE data repo, next to
+# export.csv and expansions.csv. Never add personal data to the public code repo.
+name: pricewatch
+
+on:
+  schedule:
+    - cron: "7 * * * *" # hourly; PokéWallet's hour resets at :00 UTC (DD-11)
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "run prices the due cards; import reloads export.csv"
+        type: choice
+        options: [run, import]
+        default: run
+
+# One job at a time. A new one waits for the running one; none is cancelled mid-write.
+concurrency:
+  group: pricewatch
+  cancel-in-progress: false
+
+permissions:
+  contents: write # to push the db branch
+
+jobs:
+  pricewatch:
+    runs-on: ubuntu-latest
+    # An import may wait out spent hours (DD-11); a run never waits (--no-wait).
+    timeout-minutes: ${{ inputs.command == 'import' && 300 || 50 }}
+    env:
+      COMMAND: ${{ inputs.command || 'run' }} # a scheduled trigger has no inputs
+      POKEWALLET_API_KEY: ${{ secrets.POKEWALLET_API_KEY }}
+    steps:
+      - name: Check out the data
+        uses: actions/checkout@v4
+
+      - name: Check out pricewatch
+        uses: actions/checkout@v4
+        with:
+          repository: jkhaynes/pricewatch
+          ref: main # or pin a commit
+          path: src
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Build
+        run: go build -C src -o "$PWD/pricewatch" ./cmd/pricewatch
+
+      # The database lives on the db branch as a single commit. A missing branch
+      # is only acceptable for an import; any other failure stops the job, so an
+      # empty database is never pushed over the real one.
+      - name: Restore the database
+        run: |
+          git ls-remote --exit-code --heads origin db > /dev/null && found=0 || found=$?
+          case $found in
+            0) git fetch -q --depth=1 origin db
+               git cat-file blob FETCH_HEAD:pricewatch.db > pricewatch.db ;;
+            2) if [ "$COMMAND" != import ]; then
+                 echo "::error::no db branch: seed it, or dispatch an import first"; exit 1
+               fi ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Price the due cards
+        if: env.COMMAND == 'run'
+        run: ./pricewatch run --db pricewatch.db --no-wait --budget 100
+
+      - name: Import the export
+        if: env.COMMAND == 'import'
+        run: ./pricewatch import --db pricewatch.db --expansions expansions.csv export.csv
+
+      # Runs only if every step above succeeded. Force-pushing one orphan commit
+      # keeps the repo from growing by a database copy every hour.
+      - name: Save the database
+        run: |
+          git config user.name "pricewatch"
+          git config user.email "pricewatch@users.noreply.github.com"
+          git checkout -q --orphan db-save
+          git rm -rq --cached .
+          git add -f pricewatch.db
+          git commit -qm "$COMMAND at $(date -u +%FT%TZ), run ${{ github.run_id }}"
+          git push -fq origin HEAD:db

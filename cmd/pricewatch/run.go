@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/pipeline"
+	"github.com/jkhaynes/pricewatch/internal/priority"
 	"github.com/jkhaynes/pricewatch/internal/source/pokewallet"
 	"github.com/jkhaynes/pricewatch/internal/store"
 )
@@ -20,6 +22,7 @@ type runOpts struct {
 	DB, Source      string
 	Budget, Workers int
 	Provider        providerOpts
+	Now             func() time.Time // nil: time.Now; tests move the clock
 }
 
 func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger) error {
@@ -29,6 +32,7 @@ func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger)
 	fs.StringVar(&o.Source, "source", pokewallet.Name, "price source")
 	fs.IntVar(&o.Budget, "budget", 100, "max requests (source cards) this run")
 	fs.IntVar(&o.Workers, "workers", 2, "concurrent workers")
+	fs.BoolVar(&o.Provider.NoWait, "no-wait", false, "stop when the hour's allowance is spent instead of waiting (scheduled runs)")
 	fs.StringVar(&o.Provider.BaseURL, "base-url", "", "override the source's API base URL")
 	fs.DurationVar(&o.Provider.Timeout, "timeout", 15*time.Second, "per-request timeout")
 	if err := fs.Parse(args); err != nil {
@@ -61,12 +65,14 @@ func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger)
 	return err
 }
 
-func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Writer, log *slog.Logger) (pipeline.Summary, error) {
+func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Writer, log *slog.Logger) (sum pipeline.Summary, err error) {
 	st, err := store.Open(ctx, o.DB)
 	if err != nil {
 		return pipeline.Summary{}, err
 	}
-	defer st.Close()
+	// Closing checkpoints the WAL (DD-13). Its error must reach the caller, so the
+	// scheduled job never pushes a database that did not close cleanly.
+	defer func() { err = errors.Join(err, st.Close()) }()
 	o.Provider.Quota, o.Provider.Log = st, log
 	prov, err := newProvider(o.Source, o.Provider)
 	if err != nil {
@@ -74,14 +80,14 @@ func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Write
 	}
 
 	r := &pipeline.Runner{Store: st, Source: prov.prices, SourceName: prov.name,
-		Budget: o.Budget, Workers: o.Workers, Log: log}
-	sum, err := r.Run(ctx, stop)
+		Budget: o.Budget, Workers: o.Workers, Log: log, Policy: priority.Default, Now: o.Now}
+	sum, err = r.Run(ctx, stop)
 	if err != nil {
 		return sum, err
 	}
 
-	fmt.Fprintf(out, "run %d (%s): %d requests, %d cards: ok %d, failed %d, abandoned %d, deferred %d\n",
-		sum.RunID, prov.name, sum.Requests, sum.Keys, sum.OK, sum.Failed, sum.Abandoned, sum.Deferred)
+	fmt.Fprintf(out, "run %d (%s): %d requests, %d cards: ok %d, failed %d, abandoned %d, deferred %d; %d cards not due yet\n",
+		sum.RunID, prov.name, sum.Requests, sum.Keys, sum.OK, sum.Failed, sum.Abandoned, sum.Deferred, sum.NotDue)
 	if sum.StoppedBy != nil {
 		fmt.Fprintf(out, "stopped early: %v\n", sum.StoppedBy)
 	}

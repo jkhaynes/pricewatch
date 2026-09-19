@@ -29,6 +29,7 @@ type providerOpts struct {
 	Quota   source.Quota
 	Limits  *source.Limits // nil: the provider's published limits
 	Log     *slog.Logger   // nil: the client logs nothing, not even hourly pauses
+	NoWait  bool           // a spent hour ends the command instead of pausing it
 }
 
 // providers is the swap point. Adding a source is one entry here plus its package.
@@ -43,6 +44,7 @@ var providers = map[string]func(providerOpts) (provider, error){
 			cfg.Limits = *o.Limits
 		}
 		cfg.Log = o.Log
+		cfg.NoWait = o.NoWait
 		p := pokewallet.New(source.New(cfg))
 		return provider{name: pokewallet.Name, catalog: p, prices: p}, nil
 	},

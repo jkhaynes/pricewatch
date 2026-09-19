@@ -356,3 +356,44 @@ func TestNewPicksTheSourcesHourWindow(t *testing.T) {
 		t.Errorf("aligned: default %v, ClockHour %v; want false, true", rolling.hour.aligned, clock.hour.aligned)
 	}
 }
+
+// A scheduled run must never sit out an hour: it would still be running when
+// the next one starts. With NoWait, a spent hour ends the request at once.
+func TestNoWaitStopsInsteadOfWaiting(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int // the server's answer, always with 0 left this hour
+		wantHits int32
+	}{
+		{"the hour spent by a success", http.StatusOK, 1},
+		{"an hourly 429 is not retried", http.StatusTooManyRequests, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hits atomic.Int32
+			base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				hourHeaders(w, 0)
+				w.WriteHeader(tt.status)
+				w.Write([]byte(`{}`))
+			})
+			c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second,
+				HourCount: hourCount, NoWait: true})
+			// Without NoWait these calls would wait an hour; the deadline turns that into a quick failure.
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			var err error
+			for range 3 {
+				if err = c.GetJSON(ctx, "/x", &struct{}{}); err != nil {
+					break
+				}
+			}
+			if !errors.Is(err, card.ErrRateLimited) || errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("err = %v, want ErrRateLimited without waiting", err)
+			}
+			if hits.Load() != tt.wantHits {
+				t.Errorf("hits = %d, want %d: a spent hour must not send more requests", hits.Load(), tt.wantHits)
+			}
+		})
+	}
+}

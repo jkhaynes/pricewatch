@@ -48,156 +48,6 @@ func observe(t *testing.T, s *SQLite, runID int64, key string, market *float64) 
 	}
 }
 
-func sourceIDs(ms []card.Mapping) []string {
-	var out []string
-	for _, m := range ms {
-		out = append(out, m.SourceCardID)
-	}
-	return out
-}
-
-func equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func TestStalestSelectsWholeSourceCardsAndContinues(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	k := seed(t, s,
-		spec{"A", "1/109", "Normal", "pk_A"},
-		spec{"A", "1/109", "Reverse Holo", "pk_A"},
-		spec{"B", "2/109", "Normal", "pk_B"},
-		spec{"C", "3/109", "Normal", "pk_C"},
-	)
-
-	// Budget of 2 source cards: pk_A (both variants) and pk_B. That is 3 keys for 2 requests.
-	first, err := s.Stalest(ctx, "pw", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := sourceIDs(first); !equal(got, []string{"pk_A", "pk_A", "pk_B"}) {
-		t.Fatalf("run 1 = %v", got)
-	}
-	r1, _ := s.StartRun(ctx)
-	for _, key := range k[:3] {
-		observe(t, s, r1, key, fp(1))
-	}
-
-	// Next run continues: pk_C was never seen, then pk_A is the oldest.
-	second, err := s.Stalest(ctx, "pw", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := sourceIDs(second); !equal(got, []string{"pk_C", "pk_A", "pk_A"}) {
-		t.Fatalf("run 2 = %v, want [pk_C pk_A pk_A]", got)
-	}
-}
-
-func TestStalestTreatsPartlySeenCardAsNeverSeen(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	k := seed(t, s,
-		spec{"A", "1/109", "Normal", "pk_A"},
-		spec{"B", "2/109", "Normal", "pk_B"},
-	)
-	r1, _ := s.StartRun(ctx)
-	observe(t, s, r1, k[0], fp(1))
-	observe(t, s, r1, k[1], fp(1))
-
-	// A Reverse Holo copy of A is added to the collection later and has never been priced.
-	rows := []card.Row{row("A", "1/109", "Normal"), row("B", "2/109", "Normal"), row("A", "1/109", "Reverse Holo")}
-	if err := s.ReplaceCollection(ctx, rows); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutMapping(ctx, card.Mapping{Key: rows[2].Key(), Source: "pw", SourceCardID: "pk_A", Variant: card.VariantReverseHolo, Status: card.StatusResolved}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.Stalest(ctx, "pw", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ids := sourceIDs(got); !equal(ids, []string{"pk_A", "pk_A"}) {
-		t.Errorf("Stalest = %v, want pk_A first because its new variant was never seen", ids)
-	}
-}
-
-// DD-8: export price breaks staleness ties; it never outranks staleness.
-func TestStalestBreaksTiesByExportPrice(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	priced := func(name, number, variant string, price *float64) card.Row {
-		r := row(name, number, variant)
-		r.Price = price
-		return r
-	}
-	rows := []card.Row{
-		priced("Cheap", "1/109", "Normal", fp(0.06)),
-		priced("Rich", "2/109", "Normal", fp(1.00)),
-		priced("Rich", "2/109", "Reverse Holo", fp(400.00)), // a card is worth its most valuable variant
-		priced("Mid", "3/109", "Normal", fp(5.00)),
-		priced("Unpriced", "4/109", "Normal", nil), // counts as 0
-	}
-	if err := s.ReplaceCollection(ctx, rows); err != nil {
-		t.Fatal(err)
-	}
-	ids := []string{"pk_cheap", "pk_rich", "pk_rich", "pk_mid", "pk_none"}
-	for i, r := range rows {
-		v, _ := card.ParseVariant(r.Variant)
-		if err := s.PutMapping(ctx, card.Mapping{Key: r.Key(), Source: "pw", SourceCardID: ids[i], Variant: v, Status: card.StatusResolved}); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// First pass: everything is tied at "never seen", so value decides.
-	got, err := s.Stalest(ctx, "pw", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if order := sourceIDs(got); !equal(order, []string{"pk_rich", "pk_rich", "pk_mid", "pk_cheap", "pk_none"}) {
-		t.Fatalf("first pass = %v, want most valuable first", order)
-	}
-
-	// Once observed, staleness wins: the cheap card priced first is due before the rich one.
-	r1, _ := s.StartRun(ctx)
-	for _, r := range rows { // Cheap is observed first, so it becomes the stalest
-		observe(t, s, r1, r.Key(), fp(1))
-	}
-	next, err := s.Stalest(ctx, "pw", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if order := sourceIDs(next); !equal(order, []string{"pk_cheap"}) {
-		t.Errorf("after observing = %v, want pk_cheap (stalest) despite its low value", order)
-	}
-}
-
-func TestStalestSkipsUnresolvedAndOtherSources(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	k := seed(t, s, spec{"A", "1/109", "Normal", "pk_A"}, spec{"B", "2/109", "Normal", "pk_B"})
-	if err := s.PutMapping(ctx, card.Mapping{Key: k[1], Source: "pw", Status: card.StatusAmbiguous}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutMapping(ctx, card.Mapping{Key: k[1], Source: "other", SourceCardID: "x", Status: card.StatusResolved}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.Stalest(ctx, "pw", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ids := sourceIDs(got); !equal(ids, []string{"pk_A"}) {
-		t.Errorf("Stalest = %v, want only pk_A", ids)
-	}
-}
-
 func TestSaveRejectsSecondObservationInSameRun(t *testing.T) {
 	s := openTest(t)
 	k := seed(t, s, spec{"A", "1/109", "Normal", "pk_A"})
@@ -261,11 +111,113 @@ func TestFinishRunRecordsCounts(t *testing.T) {
 	}
 }
 
-// At the real collection's scale (about 8,800 rows) SQLite chose a plan that
-// re-ran the "pick the stalest cards" step once per card_map row, so a
-// --budget 5 run never got past selection (2026-09-19). Stalest must stay fast
-// at that scale for any budget.
-func TestStalestIsFastAtCollectionScale(t *testing.T) {
+func byID(cs []card.Candidate) map[string]card.Candidate {
+	out := map[string]card.Candidate{}
+	for _, c := range cs {
+		out[c.SourceCardID] = c
+	}
+	return out
+}
+
+func TestCandidatesGroupRowsAndSummariseThem(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	priced := func(name, number, variant string, price *float64) card.Row {
+		r := row(name, number, variant)
+		r.Price = price
+		return r
+	}
+	rows := []card.Row{
+		priced("A", "1/109", "Normal", fp(1.00)),
+		priced("A", "1/109", "Reverse Holo", fp(3.00)), // same source card as the Normal
+		priced("B", "2/109", "Normal", fp(9.00)),
+		priced("C", "3/109", "Normal", nil),
+	}
+	if err := s.ReplaceCollection(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"pk_A", "pk_A", "pk_B", "pk_C"}
+	for i, r := range rows {
+		v, _ := card.ParseVariant(r.Variant)
+		if err := s.PutMapping(ctx, card.Mapping{Key: r.Key(), Source: "pw", SourceCardID: ids[i], Variant: v, Status: card.StatusResolved}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
+	t2 := t1.Add(24 * time.Hour)
+	r1, _ := s.StartRun(ctx)
+	save := func(runID int64, key string, market *float64, at time.Time) {
+		if err := s.Save(ctx, runID, card.Observation{CardID: key, Source: "pw", Price: card.Price{Market: market}, ObservedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(r1, rows[0].Key(), fp(50), t1) // A Normal: market 50 beats its $1 export price
+	save(r1, rows[1].Key(), fp(2), t1)
+	save(r1, rows[2].Key(), nil, t1) // B: priced, but no market price: keep the export price
+	r2, _ := s.StartRun(ctx)
+	save(r2, rows[0].Key(), fp(60), t2) // A Normal again; A Reverse is still at t1
+
+	got, err := s.Candidates(ctx, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := byID(got)
+	if len(got) != 3 {
+		t.Fatalf("got %d candidates, want 3: %+v", len(got), got)
+	}
+	a := c["pk_A"]
+	if len(a.Keys) != 2 || a.NeverSeen || !a.LastChecked.Equal(t1) || a.Value != 60 {
+		t.Errorf("A = keys %d, neverSeen %v, lastChecked %v, value %v; want 2, false, %v (its oldest row), 60 (latest market)",
+			len(a.Keys), a.NeverSeen, a.LastChecked, a.Value, t1)
+	}
+	if b := c["pk_B"]; b.NeverSeen || b.Value != 9 {
+		t.Errorf("B = neverSeen %v, value %v; want false, 9 (export price, since no market price)", b.NeverSeen, b.Value)
+	}
+	if cc := c["pk_C"]; !cc.NeverSeen || cc.Value != 0 {
+		t.Errorf("C = neverSeen %v, value %v; want true, 0", cc.NeverSeen, cc.Value)
+	}
+}
+
+func TestCandidatesAPartlyPricedCardIsNeverSeen(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	k := seed(t, s, spec{"A", "1/109", "Normal", "pk_A"}, spec{"A", "1/109", "Reverse Holo", "pk_A"})
+	r1, _ := s.StartRun(ctx)
+	observe(t, s, r1, k[0], fp(1)) // only the Normal
+	got, err := s.Candidates(ctx, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].NeverSeen {
+		t.Errorf("a card with an unpriced row must count as never seen: %+v", got)
+	}
+}
+
+func TestCandidatesSkipUnresolvedOtherSourcesAndRemovedRows(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	k := seed(t, s, spec{"A", "1/109", "Normal", "pk_A"}, spec{"B", "2/109", "Normal", "pk_B"})
+	if err := s.PutMapping(ctx, card.Mapping{Key: k[1], Source: "pw", Status: card.StatusAmbiguous}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutMapping(ctx, card.Mapping{Key: k[1], Source: "other", SourceCardID: "x", Status: card.StatusResolved}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutMapping(ctx, card.Mapping{Key: "gone|from|the|collection", Source: "pw", SourceCardID: "pk_gone", Status: card.StatusResolved}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Candidates(ctx, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].SourceCardID != "pk_A" {
+		t.Errorf("Candidates = %+v, want only pk_A", got)
+	}
+}
+
+// At the real collection's scale (about 8,800 rows) selection must stay fast:
+// phase 1's Stalest once took 8 minutes when SQLite mis-planned a CTE.
+func TestCandidatesAreFastAtCollectionScale(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	const n = 8000
@@ -280,23 +232,17 @@ func TestStalestIsFastAtCollectionScale(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO card_map (collection_key, source, source_card_id, variant, status)
-			VALUES (?, 'pw', ?, 'normal', 'resolved')`, key, fmt.Sprintf("pk_%d", i/2)); err != nil {
+			VALUES (?, 'pw', ?, 'normal', 'resolved')`, key, fmt.Sprintf("pk_%05d", i/2)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	for _, budget := range []int{1, 5, 100, 1000} {
-		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-		start := time.Now()
-		ms, err := s.Stalest(ctx, "pw", budget)
-		cancel()
-		if err != nil {
-			t.Fatalf("Stalest(budget %d) after %v: %v", budget, time.Since(start).Round(time.Millisecond), err)
-		}
-		if want := min(2*budget, n); len(ms) != want {
-			t.Errorf("Stalest(budget %d) = %d rows, want %d (two keys per source card)", budget, len(ms), want)
-		}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	got, err := s.Candidates(ctx, "pw")
+	if err != nil || len(got) != n/2 {
+		t.Fatalf("Candidates = %d, %v; want %d candidates within 3 s", len(got), err, n/2)
 	}
 }
