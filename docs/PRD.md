@@ -304,9 +304,26 @@ easy to inspect.
 
 **Guidance:**
 - Prices change at most daily, so re-checking a card more than once a day wastes budget.
-- Smaller, frequent runs spread the daily allowance best, for example hourly runs of about
-  40 requests against PokeWallet's 100 per hour and 1,000 per day.
+- Smaller, frequent runs spread the daily allowance best.
 - The durable quota stops any excess regardless.
+
+**Concrete shape (decided 2026-09-19, for phase 2):**
+- **Hourly scheduled runs that end themselves.** Task Scheduler starts
+  `pricewatch run --no-wait --budget 100` shortly after each hour. With value weighting
+  (DD-12), a run prices only the cards that are due, which is about 25 to 35 per hour, then
+  exits.
+- **`--no-wait`.** When the hour's allowance is spent, the run does not pause (DD-11). It
+  finishes what is in flight, reports the rest as deferred, and exits, so it can never run
+  into the next scheduled run. Interactive runs keep the waiting behaviour.
+- **A lock with a heartbeat.** Instead of reading "an open run", which a crash would leave
+  open forever, `import` and `run` each take a single lock row in SQLite and refresh its
+  heartbeat every 30 seconds. A second command refuses to start while the heartbeat is fresh
+  (under 2 minutes old), and takes the lock over once it has gone stale. Task Scheduler's
+  "do not start a new instance" setting is the second layer.
+- **`--log <file>`.** It appends the report and the logs, with a timestamped header per
+  command, because nobody reads a scheduled task's console.
+- **The Task Scheduler entry** is documented in the README as a copy-and-paste PowerShell
+  `Register-ScheduledTask` command.
 
 **Phase 3 experiment, not a commitment:** broker-side rescheduling, where a priced card is
 republished with a TTL and dead-lettered back into the work queue when it is due, is a
@@ -407,6 +424,40 @@ The two reasons for the original even spacing are handled directly instead of by
 requests in about a minute, a pause of up to an hour, then the next burst, instead of a
 steady trickle. A 150-request import finishes about as late as before, but most of it is done
 in the first few minutes.
+
+### DD-12: Check intervals by value tier (FR-10a)
+
+**Decision:** in phase 2, "what do I check next" changes from pure staleness (DD-7) to **due
+dates by value tier**.
+- **A card's value** is its most valuable collection row. For each row that is the latest
+  observed market price, falling back to the export snapshot (DD-6) until the row has one.
+- **Its tier** sets how often it is re-checked, using the Balanced schedule:
+
+  | Value | Checked every |
+  |---|---|
+  | $100 or more | 1 day |
+  | $20 to $100 | 2 days |
+  | $5 to $20 | 4 days |
+  | $1 to $5 | 7 days |
+  | $0.25 to $1 | 14 days |
+  | under $0.25 | 30 days |
+
+- **A card is due** once its oldest-checked row was last checked at least its interval ago,
+  less one hour of slack. The slack stops an hourly schedule from drifting an hour later each
+  day. A card with any never-checked row is always due.
+- **A run prices only due cards, and then stops.** Never-checked cards come first, then the
+  most overdue relative to their own interval. Value breaks ties (DD-8), and the source card
+  ID is the final tie-breaker. **Spare budget is not spent on cards that are not due.**
+
+**Rationale:** the value is concentrated. Of 4,938 priceable cards, 335 (7%) hold 74% of the
+export value. Uniform staleness re-checked a $400 card no more often than a $0.06 one, about
+every 5.5 days. The Balanced tiers need about 641 requests a day, which leaves about 360 of
+PokeWallet's 1,000 for imports and manual runs. Stopping early keeps every tier on schedule
+and saves requests instead of spending them on cards whose price has had no time to move.
+
+**What it replaces:** DD-7's pure-staleness order. DD-7's other decisions stand: a run is a
+bounded slice, progress is durable, and changes are compared against each card's own previous
+observation. DD-8's tie-breaker survives as the tie-breaker among equally due cards.
 
 ## 9. Acceptance criteria, v1
 

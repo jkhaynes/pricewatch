@@ -22,7 +22,7 @@ and no Go-specific knowledge.
 
 The full design is in `docs/PRD.md`. Read it before planning anything.
 
-Decisions DD-1 through DD-11 are settled. Do not re-open them without a concrete reason
+Decisions DD-1 through DD-12 are settled. Do not re-open them without a concrete reason
 grounded in something discovered during implementation.
 
 The brainstorming phase is already complete. Start from the PRD, not from scratch.
