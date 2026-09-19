@@ -77,7 +77,7 @@ func importCollection(ctx context.Context, o importOpts, out io.Writer, log *slo
 		return nil, err
 	}
 	defer st.Close()
-	o.Provider.Quota = st
+	o.Provider.Quota, o.Provider.Log = st, log
 	prov, err := newProvider(o.Source, o.Provider)
 	if err != nil {
 		return nil, err

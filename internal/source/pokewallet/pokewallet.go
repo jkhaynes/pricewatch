@@ -20,7 +20,8 @@ const (
 )
 
 // Limits are the free plan's, as reported by GET / and every response's headers.
-var Limits = source.Limits{PerHour: 100, PerDay: 1000}
+// PerSecond is a politeness cap: pacing follows the server's own hourly count (DD-11).
+var Limits = source.Limits{PerSecond: 2, PerHour: 100, PerDay: 1000}
 
 // subtypes maps our variants to tcgplayer sub_type_name values (spike, 2026-09-18).
 var subtypes = map[card.Variant][]string{
@@ -33,13 +34,14 @@ var subtypes = map[card.Variant][]string{
 
 func Config(baseURL, apiKey string, q source.Quota, timeout time.Duration) source.Config {
 	return source.Config{
-		Name:    Name,
-		BaseURL: baseURL,
-		Header:  http.Header{"X-API-Key": {apiKey}},
-		Limits:  Limits,
-		Timeout: timeout,
-		Quota:   q,
-		DayUsed: source.HeaderDayUsed("X-RateLimit-Limit-Day", "X-RateLimit-Remaining-Day"),
+		Name:      Name,
+		BaseURL:   baseURL,
+		Header:    http.Header{"X-API-Key": {apiKey}},
+		Limits:    Limits,
+		Timeout:   timeout,
+		Quota:     q,
+		DayUsed:   source.HeaderDayUsed("X-RateLimit-Limit-Day", "X-RateLimit-Remaining-Day"),
+		HourCount: source.HeaderCount("X-RateLimit-Limit-Hour", "X-RateLimit-Remaining-Hour"),
 	}
 }
 

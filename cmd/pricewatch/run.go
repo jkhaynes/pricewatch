@@ -67,7 +67,7 @@ func priceRun(ctx context.Context, stop <-chan struct{}, o runOpts, out io.Write
 		return pipeline.Summary{}, err
 	}
 	defer st.Close()
-	o.Provider.Quota = st
+	o.Provider.Quota, o.Provider.Log = st, log
 	prov, err := newProvider(o.Source, o.Provider)
 	if err != nil {
 		return pipeline.Summary{}, err

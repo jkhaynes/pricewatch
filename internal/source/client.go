@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,9 +17,9 @@ import (
 
 // Limits a provider publishes (or we impose). Zero means none of that kind.
 type Limits struct {
-	PerSecond float64
-	PerHour   int
-	PerDay    int // enforced durably through Quota, not by the in-memory limiter
+	PerSecond float64 // with HourCount set, only a politeness cap
+	PerHour   int     // spacing fallback for sources that report no hourly count
+	PerDay    int     // enforced durably through Quota, not by the in-memory limiter
 }
 
 // Quota is durable per-source, per-UTC-day request accounting.
@@ -29,27 +30,47 @@ type Quota interface {
 }
 
 type Config struct {
-	Name    string
-	BaseURL string
-	Header  http.Header // e.g. the API key
-	Limits  Limits
-	Timeout time.Duration
-	Quota   Quota                         // nil: no daily accounting
-	DayUsed func(http.Header) (int, bool) // nil: no server-side sync
+	Name      string
+	BaseURL   string
+	Header    http.Header // e.g. the API key
+	Limits    Limits
+	Timeout   time.Duration
+	Quota     Quota                                             // nil: no daily accounting
+	DayUsed   func(http.Header) (int, bool)                     // nil: no server-side daily sync
+	HourCount func(http.Header) (limit, remaining int, ok bool) // nil: even spacing by PerHour (DD-11)
+	Log       *slog.Logger                                      // nil: pauses are not logged
 }
 
 type Client struct {
 	cfg     Config
 	http    *http.Client
 	limiter *rate.Limiter
+	hour    *hourly // nil unless the source reports an hourly count
 	now     func() time.Time
 }
 
 func New(cfg Config) *Client {
-	return &Client{cfg: cfg, http: &http.Client{}, limiter: rate.NewLimiter(limitFor(cfg.Limits), 1), now: time.Now}
+	c := &Client{cfg: cfg, http: &http.Client{}, limiter: rate.NewLimiter(pacing(cfg), 1), now: time.Now}
+	if cfg.HourCount != nil {
+		c.hour = newHourly(time.Hour)
+	}
+	return c
 }
 
 func (c *Client) Name() string { return c.cfg.Name }
+
+// pacing is the in-memory limiter's rate. A source that reports its hourly
+// count is only held to the politeness cap, because hourly tracks the real
+// allowance (DD-11). Otherwise requests are spaced evenly across the hour.
+func pacing(cfg Config) rate.Limit {
+	if cfg.HourCount == nil {
+		return limitFor(cfg.Limits)
+	}
+	if cfg.Limits.PerSecond > 0 {
+		return rate.Limit(cfg.Limits.PerSecond)
+	}
+	return rate.Inf
+}
 
 func limitFor(l Limits) rate.Limit {
 	lim := rate.Inf
@@ -82,6 +103,15 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
 			return fmt.Errorf("%s: %d of %d used on %s: %w", c.cfg.Name, used, c.cfg.Limits.PerDay, day, card.ErrQuotaExhausted)
 		}
 	}
+
+	var sent time.Time
+	var header http.Header // stays nil unless a response arrives
+	if c.hour != nil {
+		if err := c.awaitHour(ctx); err != nil {
+			return err
+		}
+		defer func() { c.settleHour(sent, header) }()
+	}
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("rate limit wait: %w", err)
 	}
@@ -102,11 +132,13 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
 			return fmt.Errorf("count request: %w", err)
 		}
 	}
+	sent = c.now()
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
 	defer resp.Body.Close()
+	header = resp.Header
 
 	if c.cfg.Quota != nil && c.cfg.DayUsed != nil {
 		if used, ok := c.cfg.DayUsed(resp.Header); ok {
@@ -131,14 +163,56 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) error {
 	return nil
 }
 
+// awaitHour reserves a request against the hourly count, pausing for the
+// window to reset when the server says none remain. Cancelling ctx ends it.
+func (c *Client) awaitHour(ctx context.Context) error {
+	for {
+		wait := c.hour.reserve(c.now())
+		if wait == 0 {
+			return nil
+		}
+		if c.cfg.Log != nil {
+			c.cfg.Log.Info("hourly allowance used; waiting for the hourly window to reset",
+				"source", c.cfg.Name, "wait", wait.Round(time.Second))
+		}
+		t := time.NewTimer(wait)
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			t.Stop()
+			return fmt.Errorf("waiting for the hourly window: %w", ctx.Err())
+		}
+	}
+}
+
+// settleHour ends a reservation: it records the count the response reported,
+// or just frees the slot when there was no response or no count in it.
+func (c *Client) settleHour(sent time.Time, header http.Header) {
+	if header != nil {
+		if limit, remaining, ok := c.cfg.HourCount(header); ok {
+			c.hour.observe(sent, limit, remaining)
+			return
+		}
+	}
+	c.hour.release()
+}
+
 // HeaderDayUsed reads "used today" as limit minus remaining from two response headers.
 func HeaderDayUsed(limitHeader, remainingHeader string) func(http.Header) (int, bool) {
 	return func(h http.Header) (int, bool) {
+		limit, remaining, ok := HeaderCount(limitHeader, remainingHeader)(h)
+		return limit - remaining, ok
+	}
+}
+
+// HeaderCount reads a limit and a remaining count from two response headers.
+func HeaderCount(limitHeader, remainingHeader string) func(http.Header) (limit, remaining int, ok bool) {
+	return func(h http.Header) (int, int, bool) {
 		limit, err1 := strconv.Atoi(h.Get(limitHeader))
 		remaining, err2 := strconv.Atoi(h.Get(remainingHeader))
 		if err1 != nil || err2 != nil {
-			return 0, false
+			return 0, 0, false
 		}
-		return limit - remaining, true
+		return limit, remaining, true
 	}
 }

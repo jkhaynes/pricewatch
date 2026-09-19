@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
 	"github.com/jkhaynes/pricewatch/internal/pipeline"
@@ -183,5 +185,21 @@ func TestQuoteUnknownCardIsRequestError(t *testing.T) {
 	_, err := New(fakeGetter{}).Quote(t.Context(), "pk_nope", []card.Variant{card.VariantNormal})
 	if !errors.Is(err, card.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConfigPacesAgainstTheServersHourlyCount(t *testing.T) {
+	cfg := Config(DefaultBaseURL, "key", nil, time.Second)
+	h := http.Header{}
+	h.Set("X-RateLimit-Limit-Hour", "100")
+	h.Set("X-RateLimit-Remaining-Hour", "37")
+	if cfg.HourCount == nil {
+		t.Fatal("HourCount not set")
+	}
+	if limit, remaining, ok := cfg.HourCount(h); !ok || limit != 100 || remaining != 37 {
+		t.Errorf("HourCount = %d, %d, %v", limit, remaining, ok)
+	}
+	if cfg.Limits.PerSecond != 2 {
+		t.Errorf("politeness cap = %v per second, want 2", cfg.Limits.PerSecond)
 	}
 }

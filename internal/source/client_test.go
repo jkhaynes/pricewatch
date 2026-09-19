@@ -1,10 +1,14 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -176,6 +180,91 @@ func TestLimitFor(t *testing.T) {
 	for _, tt := range tests {
 		if got := limitFor(tt.l); got != tt.want {
 			t.Errorf("limitFor(%+v) = %v, want %v", tt.l, got, tt.want)
+		}
+	}
+}
+
+func hourHeaders(w http.ResponseWriter, remaining int) {
+	w.Header().Set("X-RateLimit-Limit-Hour", "100")
+	w.Header().Set("X-RateLimit-Remaining-Hour", strconv.Itoa(remaining))
+}
+
+var hourCount = HeaderCount("X-RateLimit-Limit-Hour", "X-RateLimit-Remaining-Hour")
+
+func TestBurstsWhileServerReportsRequestsLeft(t *testing.T) {
+	var hits atomic.Int32
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		hourHeaders(w, 100-int(hits.Add(1)))
+		w.Write([]byte(`{}`))
+	})
+	c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second, HourCount: hourCount})
+	start := time.Now()
+	for range 10 {
+		if err := c.GetJSON(t.Context(), "/x", &struct{}{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if el := time.Since(start); el > 2*time.Second {
+		t.Errorf("10 requests took %v; with requests left they should burst, not wait 36 s each", el)
+	}
+}
+
+func TestWaitsOutTheWindowWhenServerSaysNoneLeft(t *testing.T) {
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		hourHeaders(w, 0)
+		w.Write([]byte(`{}`))
+	})
+	var logs bytes.Buffer
+	c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second, HourCount: hourCount,
+		Log: slog.New(slog.NewTextHandler(&logs, nil))})
+	c.hour = newHourly(300 * time.Millisecond) // a short "hour" for the test
+	if err := c.GetJSON(t.Context(), "/x", &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := c.GetJSON(t.Context(), "/x", &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if el := time.Since(start); el < 200*time.Millisecond {
+		t.Errorf("second request went after %v; it should have waited for the window", el)
+	}
+	if !strings.Contains(logs.String(), "waiting for the hourly window") {
+		t.Errorf("a long pause must be logged, got %q", logs.String())
+	}
+}
+
+func TestWaitingForTheWindowHonoursCancellation(t *testing.T) {
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		hourHeaders(w, 0)
+		w.Write([]byte(`{}`))
+	})
+	c := New(Config{Name: "pw", BaseURL: base, Limits: Limits{PerHour: 100}, Timeout: time.Second, HourCount: hourCount})
+	if err := c.GetJSON(t.Context(), "/x", &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := c.GetJSON(ctx, "/x", &struct{}{})
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
+		t.Fatalf("err = %v after %v; Ctrl-C must interrupt the hour-long wait", err, time.Since(start))
+	}
+}
+
+func TestPacing(t *testing.T) {
+	count := func(http.Header) (int, int, bool) { return 0, 0, false }
+	tests := []struct {
+		name string
+		cfg  Config
+		want rate.Limit
+	}{
+		{"no hourly headers: even spacing as before", Config{Limits: Limits{PerHour: 3600}}, 1},
+		{"hourly headers: only the politeness cap", Config{Limits: Limits{PerSecond: 2, PerHour: 100}, HourCount: count}, 2},
+		{"hourly headers and no cap", Config{Limits: Limits{PerHour: 100}, HourCount: count}, rate.Inf},
+	}
+	for _, tt := range tests {
+		if got := pacing(tt.cfg); got != tt.want {
+			t.Errorf("%s: pacing = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }

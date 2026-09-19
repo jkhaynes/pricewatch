@@ -121,12 +121,17 @@ What the counts mean:
 
 ### Rate limits
 
-PokéWallet's free plan allows **100 requests per hour and 1,000 per day**.
-- pricewatch spaces requests to one every 36 seconds, so a 100-request run takes about an
-  hour.
+PokéWallet's free plan allows **100 requests per hour and 1,000 per day**. pricewatch paces
+itself against PokéWallet's own count of what's left (PRD DD-11):
+- **While requests are left this hour, they go out immediately**, at most 2 per second, so
+  a 100-request run takes about a minute.
+- **Once the hour's allowance is spent, it pauses** until the hour is certainly over,
+  measured from the first request of that hour, and logs that it's waiting. Ctrl-C
+  interrupts the pause as usual.
 - The daily count is stored in the database and corrected from the response headers, so
   restarts can't overspend it.
-- When a limit is reached, the run stops cleanly and the remaining cards are deferred.
+- When the daily limit is reached, or PokéWallet answers "too many requests", the run stops
+  cleanly and the remaining cards are deferred.
 
 ## What phase 1 does not do
 

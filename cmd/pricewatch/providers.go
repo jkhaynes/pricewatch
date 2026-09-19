@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"slices"
@@ -27,6 +28,7 @@ type providerOpts struct {
 	Timeout time.Duration
 	Quota   source.Quota
 	Limits  *source.Limits // nil: the provider's published limits
+	Log     *slog.Logger   // nil: the client logs nothing, not even hourly pauses
 }
 
 // providers is the swap point. Adding a source is one entry here plus its package.
@@ -40,6 +42,7 @@ var providers = map[string]func(providerOpts) (provider, error){
 		if o.Limits != nil {
 			cfg.Limits = *o.Limits
 		}
+		cfg.Log = o.Log
 		p := pokewallet.New(source.New(cfg))
 		return provider{name: pokewallet.Name, catalog: p, prices: p}, nil
 	},
