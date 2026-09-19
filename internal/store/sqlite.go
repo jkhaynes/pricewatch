@@ -31,7 +31,28 @@ func Open(ctx context.Context, path string) (*SQLite, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := addColumn(ctx, db, "runs", "requests", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &SQLite{db: db}, nil
+}
+
+// addColumn adds a column that schema.sql declares to a table an older schema
+// created. CREATE TABLE IF NOT EXISTS leaves existing tables untouched.
+func addColumn(ctx context.Context, db *sql.DB, table, column, decl string) error {
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&n); err != nil {
+		return fmt.Errorf("inspect %s: %w", table, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	// table, column and decl are constants from this package, never input.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+decl); err != nil {
+		return fmt.Errorf("add %s.%s: %w", table, column, err)
+	}
+	return nil
 }
 
 func (s *SQLite) Close() error { return s.db.Close() }

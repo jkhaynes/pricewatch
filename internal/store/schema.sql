@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS runs (
   started_at  TIMESTAMP NOT NULL,
   finished_at TIMESTAMP,
   ok_count    INTEGER NOT NULL DEFAULT 0,
-  error_count INTEGER NOT NULL DEFAULT 0
+  error_count INTEGER NOT NULL DEFAULT 0,
+  requests    INTEGER NOT NULL DEFAULT 0   -- added in phase 3; addColumn upgrades older files
 );
 
 CREATE TABLE IF NOT EXISTS observations (

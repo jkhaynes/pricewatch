@@ -25,6 +25,7 @@ type memStore struct {
 	mappings []card.Mapping
 	finished bool
 	ok, fail int
+	requests int
 	saveErr  error
 	art      map[string]string // source card ID -> image URL
 	artCalls int
@@ -62,8 +63,8 @@ func (m *memStore) PutMapping(ctx context.Context, mp card.Mapping) error {
 	m.mappings = append(m.mappings, mp)
 	return ctx.Err()
 }
-func (m *memStore) FinishRun(ctx context.Context, _ int64, ok, failed int) error {
-	m.finished, m.ok, m.fail = true, ok, failed
+func (m *memStore) FinishRun(ctx context.Context, _ int64, ok, failed, requests int) error {
+	m.finished, m.ok, m.fail, m.requests = true, ok, failed, requests
 	return ctx.Err()
 }
 func (m *memStore) Changes(ctx context.Context, _ int64) ([]card.Change, error) {
@@ -164,8 +165,8 @@ func TestRunBudgetCountsRequestsNotKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if src.calls.Load() != 2 || sum.Keys != 3 || len(st.saved) != 3 {
-		t.Errorf("calls=%d keys=%d saved=%d, want 2/3/3", src.calls.Load(), sum.Keys, len(st.saved))
+	if src.calls.Load() != 2 || sum.Keys != 3 || len(st.saved) != 3 || st.requests != 2 {
+		t.Errorf("calls=%d keys=%d saved=%d recorded requests=%d, want 2/3/3/2", src.calls.Load(), sum.Keys, len(st.saved), st.requests)
 	}
 }
 

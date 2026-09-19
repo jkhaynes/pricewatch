@@ -98,16 +98,16 @@ func TestFinishRunRecordsCounts(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	r, _ := s.StartRun(ctx)
-	if err := s.FinishRun(ctx, r, 7, 2); err != nil {
+	if err := s.FinishRun(ctx, r, 7, 2, 5); err != nil {
 		t.Fatal(err)
 	}
-	var ok, failed int
+	var ok, failed, requests int
 	var finished *time.Time
-	if err := s.db.QueryRowContext(ctx, `SELECT ok_count, error_count, finished_at FROM runs WHERE id=?`, r).Scan(&ok, &failed, &finished); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT ok_count, error_count, requests, finished_at FROM runs WHERE id=?`, r).Scan(&ok, &failed, &requests, &finished); err != nil {
 		t.Fatal(err)
 	}
-	if ok != 7 || failed != 2 || finished == nil {
-		t.Errorf("ok=%d failed=%d finished=%v", ok, failed, finished)
+	if ok != 7 || failed != 2 || requests != 5 || finished == nil {
+		t.Errorf("ok=%d failed=%d requests=%d finished=%v", ok, failed, requests, finished)
 	}
 }
 

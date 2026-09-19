@@ -18,7 +18,7 @@ type Store interface {
 	Save(ctx context.Context, runID int64, obs card.Observation) error
 	PutMapping(ctx context.Context, m card.Mapping) error
 	PutArt(ctx context.Context, source, sourceCardID, url string) error
-	FinishRun(ctx context.Context, runID int64, ok, failed int) error
+	FinishRun(ctx context.Context, runID int64, ok, failed, requests int) error
 	Changes(ctx context.Context, runID int64) ([]card.Change, error)
 }
 
@@ -93,7 +93,7 @@ func (r *Runner) Run(ctx context.Context, stop <-chan struct{}) (Summary, error)
 	}
 	sum.Deferred = sum.Keys - sum.OK - sum.Failed - sum.Abandoned
 
-	if err := r.Store.FinishRun(persist, runID, sum.OK, sum.Failed+sum.Abandoned); err != nil {
+	if err := r.Store.FinishRun(persist, runID, sum.OK, sum.Failed+sum.Abandoned, sum.Requests); err != nil {
 		r.Log.Error("finish run", "run", runID, "err", err)
 	}
 	if sum.Changes, err = r.Store.Changes(persist, runID); err != nil {
