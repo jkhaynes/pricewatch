@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -192,18 +197,74 @@ func TestQuoteUnknownCardIsRequestError(t *testing.T) {
 	}
 }
 
-func TestConfigPacesAgainstTheServersHourlyCount(t *testing.T) {
+// PokeWallet's X-RateLimit-Remaining-* headers report the count from before the
+// request carrying them was counted: a brand-new key's first response said 100
+// of 100 per hour and 1000 of 1000 per day (spike, 2026-09-18). Reading them as
+// "after" let the client send one request too many and get a 429 (2026-09-18,
+// "used 100, remaining 0"). Config converts them to "after this request".
+func TestConfigCountsTheRequestCarryingTheHeaders(t *testing.T) {
 	cfg := Config(DefaultBaseURL, "key", nil, time.Second)
-	h := http.Header{}
-	h.Set("X-RateLimit-Limit-Hour", "100")
-	h.Set("X-RateLimit-Remaining-Hour", "37")
-	if cfg.HourCount == nil {
-		t.Fatal("HourCount not set")
+	if cfg.HourCount == nil || cfg.DayUsed == nil {
+		t.Fatal("HourCount and DayUsed must be set")
 	}
-	if limit, remaining, ok := cfg.HourCount(h); !ok || limit != 100 || remaining != 37 {
-		t.Errorf("HourCount = %d, %d, %v", limit, remaining, ok)
+	tests := []struct {
+		hourRemaining, dayRemaining string
+		wantHourLeft, wantDayUsed   int
+	}{
+		{"100", "1000", 99, 1}, // a fresh window and day: this request is the first
+		{"37", "617", 36, 384},
+		{"1", "1", 0, 1000}, // the last request allowed: nothing left after it
+		{"0", "0", 0, 1000}, // a 429 still reports 0, never a negative count
+	}
+	for _, tt := range tests {
+		h := http.Header{}
+		h.Set("X-RateLimit-Limit-Hour", "100")
+		h.Set("X-RateLimit-Remaining-Hour", tt.hourRemaining)
+		h.Set("X-RateLimit-Limit-Day", "1000")
+		h.Set("X-RateLimit-Remaining-Day", tt.dayRemaining)
+		if limit, left, ok := cfg.HourCount(h); !ok || limit != 100 || left != tt.wantHourLeft {
+			t.Errorf("hour header %s: HourCount = %d, %d, %v; want 100, %d", tt.hourRemaining, limit, left, ok, tt.wantHourLeft)
+		}
+		if used, ok := cfg.DayUsed(h); !ok || used != tt.wantDayUsed {
+			t.Errorf("day header %s: DayUsed = %d, %v; want %d", tt.dayRemaining, used, ok, tt.wantDayUsed)
+		}
 	}
 	if cfg.Limits.PerSecond != 2 {
 		t.Errorf("politeness cap = %v per second, want 2", cfg.Limits.PerSecond)
+	}
+}
+
+// The real client against a server that counts like PokeWallet and enforces a
+// hard hourly limit of 3: the fourth request must wait for the window, never
+// be sent and rejected with a 429.
+func TestClientNeverOverspendsPokeWalletsHourlyLimit(t *testing.T) {
+	var used atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		before := 3 - int(used.Load()) // PokeWallet reports the count before this request
+		w.Header().Set("X-RateLimit-Limit-Hour", "3")
+		w.Header().Set("X-RateLimit-Remaining-Hour", strconv.Itoa(max(before, 0)))
+		if used.Add(1) > 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			io.WriteString(w, `{"error":"Rate limit exceeded","message":"Hourly limit exceeded"}`)
+			return
+		}
+		io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+	c := source.New(Config(srv.URL, "key", nil, time.Second))
+	for i := range 3 {
+		if err := c.GetJSON(t.Context(), "/x", &struct{}{}); err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+	}
+	// Longer than the 2-per-second politeness gap, far shorter than the hour.
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	err := c.GetJSON(ctx, "/x", &struct{}{})
+	if errors.Is(err, card.ErrRateLimited) || used.Load() > 3 {
+		t.Fatalf("a fourth request was sent and rejected (%v); the client must wait for the window instead", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "hourly window") {
+		t.Fatalf("err = %v, want the wait for the hourly window to be cut short by the deadline", err)
 	}
 }

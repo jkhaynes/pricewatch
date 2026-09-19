@@ -40,9 +40,28 @@ func Config(baseURL, apiKey string, q source.Quota, timeout time.Duration) sourc
 		Limits:    Limits,
 		Timeout:   timeout,
 		Quota:     q,
-		DayUsed:   source.HeaderDayUsed("X-RateLimit-Limit-Day", "X-RateLimit-Remaining-Day"),
-		HourCount: source.HeaderCount("X-RateLimit-Limit-Hour", "X-RateLimit-Remaining-Hour"),
+		DayUsed:   dayUsed,
+		HourCount: hourCount,
 	}
+}
+
+// PokeWallet's X-RateLimit-Remaining-* headers report the count from before
+// the request carrying them was counted: a fresh key's first response said
+// 100 of 100 per hour and 1000 of 1000 per day. The shared client expects the
+// count after the request, so both readers subtract it here.
+var (
+	rawHour = source.HeaderCount("X-RateLimit-Limit-Hour", "X-RateLimit-Remaining-Hour")
+	rawDay  = source.HeaderCount("X-RateLimit-Limit-Day", "X-RateLimit-Remaining-Day")
+)
+
+func hourCount(h http.Header) (limit, remaining int, ok bool) {
+	limit, remaining, ok = rawHour(h)
+	return limit, max(remaining-1, 0), ok
+}
+
+func dayUsed(h http.Header) (int, bool) {
+	limit, remaining, ok := rawDay(h)
+	return min(limit-remaining+1, limit), ok
 }
 
 type Getter interface {

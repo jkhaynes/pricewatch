@@ -362,6 +362,12 @@ The daily quota is unchanged: it stays durable, in SQLite, and synced from heade
 still stops dispatch cleanly and defers the remaining cards. That is the backstop if the
 count is ever wrong.
 
+**Header semantics belong to the provider.** The shared client expects the count left
+*after* the request that carries the headers. PokeWallet reports the count from *before*
+it: a fresh key's first response said 100 of 100. Reading that as "after" sent one request
+too many and drew a 429 on the first real import (2026-09-18). The PokeWallet provider now
+subtracts the carrying request from both the hourly and the daily figures.
+
 **Rationale:** the hourly cap binds either way, so throughput over any stretch longer than an
 hour is identical. What changes:
 - **Short runs finish in minutes instead of up to an hour.** A `--budget 5` run takes seconds
