@@ -22,7 +22,7 @@ and no Go-specific knowledge.
 
 The full design is in `docs/PRD.md`. Read it before planning anything.
 
-Decisions DD-1 through DD-7 are settled. Do not re-open them without a concrete reason
+Decisions DD-1 through DD-11 are settled. Do not re-open them without a concrete reason
 grounded in something discovered during implementation.
 
 The brainstorming phase is already complete. Start from the PRD, not from scratch.
@@ -35,7 +35,9 @@ before it is added. Explicitly not wanted in v1: web frameworks, ORMs, CLI frame
 Docker, logging frameworks (use `log/slog`).
 
 **Scope.** Section 4 of the PRD lists non-goals. They are real. No web UI, no HTTP API,
-no multi-user support, no deployment concerns.
+no multi-user support, no deployment concerns. The single exception is phase 4's local,
+read-only dashboard, bounded by DD-10 and not started before phase 3. It is not a licence
+for any UI earlier.
 
 **Phases.** Deliver phase 1 (FR-1 through FR-8) completely before starting phase 2. Each
 phase must leave the project in a working, useful state.

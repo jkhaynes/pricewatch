@@ -1,0 +1,128 @@
+package store
+
+import (
+	"path/filepath"
+	"testing"
+
+	"github.com/jkhaynes/pricewatch/internal/card"
+)
+
+func openTest(t *testing.T) *SQLite {
+	t.Helper()
+	s, err := Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func row(name, number, variant string) card.Row {
+	return card.Row{Region: "International", Name: name, Number: number, Expansion: "EX Ruby & Sapphire",
+		Variant: variant, Language: "English", Quantity: 1}
+}
+
+func TestOpenIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	for range 2 {
+		s, err := Open(t.Context(), path)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		s.Close()
+	}
+}
+
+func TestReplaceCollectionReplaces(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if err := s.ReplaceCollection(ctx, []card.Row{row("Mudkip", "59/109", "Normal"), row("Mudkip", "59/109", "Reverse Holo")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceCollection(ctx, []card.Row{row("Torchic", "73/109", "Normal")}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM collection`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("collection has %d rows, want 1", n)
+	}
+}
+
+func TestMappingUpsertAndRead(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	key := row("Mudkip", "59/109", "Normal").Key()
+
+	if _, ok, err := s.Mapping(ctx, "pokewallet", key); err != nil || ok {
+		t.Fatalf("Mapping before put: ok=%v err=%v", ok, err)
+	}
+	steps := []card.Mapping{
+		{Key: key, Source: "pokewallet", Status: card.StatusUnmatched, Reason: "unknown expansion"},
+		{Key: key, Source: "pokewallet", SourceCardID: "pk_59", Variant: card.VariantNormal, Status: card.StatusResolved},
+	}
+	for _, want := range steps {
+		if err := s.PutMapping(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		got, ok, err := s.Mapping(ctx, "pokewallet", key)
+		if err != nil || !ok || got != want {
+			t.Errorf("Mapping = %+v ok=%v err=%v, want %+v", got, ok, err, want)
+		}
+	}
+}
+
+func TestMappingsAreScopedBySource(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	key := row("Mudkip", "59/109", "Normal").Key()
+	pw := card.Mapping{Key: key, Source: "pokewallet", SourceCardID: "pk_59", Variant: card.VariantNormal, Status: card.StatusResolved}
+	td := card.Mapping{Key: key, Source: "tcgdex", Status: card.StatusUnmatched, Reason: "not priced"}
+	for _, m := range []card.Mapping{pw, td} {
+		if err := s.PutMapping(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []card.Mapping{pw, td} {
+		if got, _, _ := s.Mapping(ctx, want.Source, key); got != want {
+			t.Errorf("Mapping(%s) = %+v, want %+v", want.Source, got, want)
+		}
+	}
+}
+
+func TestUnresolvedAndCountsOnlyCoverCurrentCollection(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	a, b, gone := row("A", "1/109", "Normal"), row("B", "2/109", "Normal"), row("Gone", "3/109", "Normal")
+	if err := s.ReplaceCollection(ctx, []card.Row{a, b}); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []card.Mapping{
+		{Key: a.Key(), Source: "pokewallet", SourceCardID: "pk_1", Variant: card.VariantNormal, Status: card.StatusResolved},
+		{Key: b.Key(), Source: "pokewallet", Status: card.StatusAmbiguous, Reason: "two sets"},
+		{Key: gone.Key(), Source: "pokewallet", Status: card.StatusUnmatched, Reason: "not in collection any more"},
+		{Key: a.Key(), Source: "tcgdex", Status: card.StatusUnmatched, Reason: "other source, not counted"},
+	} {
+		if err := s.PutMapping(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	un, err := s.Unresolved(ctx, "pokewallet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(un) != 1 || un[0].Key != b.Key() || un[0].Reason != "two sets" {
+		t.Errorf("Unresolved = %+v", un)
+	}
+
+	counts, err := s.MappingCounts(ctx, "pokewallet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[card.StatusResolved] != 1 || counts[card.StatusAmbiguous] != 1 || counts[card.StatusUnmatched] != 0 {
+		t.Errorf("counts = %v", counts)
+	}
+}
