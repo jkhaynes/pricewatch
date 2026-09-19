@@ -5,7 +5,9 @@ A Go CLI that tracks Pokémon TCG card prices for a collection exported from
 
 ## Status
 
-Phase 1 (FR-1 to FR-8) and phase 2 (FR-10a value tiers, FR-14 scheduled runs) are complete.
+Phases 1 to 3 are complete: pricing (FR-1 to FR-8), value tiers and scheduled runs (FR-10a,
+FR-14), and a public status page (FR-15) at
+[jkhaynes.github.io/pricewatch-site](https://jkhaynes.github.io/pricewatch-site).
 The design is in [`docs/PRD.md`](docs/PRD.md). The build plans are in
 [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
@@ -112,14 +114,17 @@ What the counts mean:
 
 | Flag | Commands | Default | Meaning |
 |---|---|---|---|
-| `--db` | both | `pricewatch.db` | SQLite database path |
-| `--source` | both | `pokewallet` | price source |
+| `--db` | all | `pricewatch.db` | SQLite database path |
+| `--source` | all | `pokewallet` | price source |
 | `--expansions` | import | none | CSV of `expansion,set_id` overrides |
 | `--budget` | run | `100` | maximum requests (source cards) this run |
 | `--no-wait` | run | off | when the hour's allowance is spent, stop and defer the rest instead of waiting (scheduled runs) |
 | `--workers` | run | `2` | concurrent workers |
-| `--timeout` | both | `15s` | per-request timeout |
-| `--base-url` | both | the source's | override the API base URL |
+| `--timeout` | import, run | `15s` | per-request timeout |
+| `--base-url` | import, run | the source's | override the API base URL |
+| `--out` | site | `site` | directory for the generated `index.html` |
+| `--daily-limit` | site | `1000` | the source's daily limit, for the budget section |
+| `--run-minute` | site | `7` | the schedule's minute past each hour, for the countdown |
 
 ### Rate limits
 
@@ -200,6 +205,35 @@ After that:
   copy is the source of truth. A local run against a downloaded copy is not merged back.
 - GitHub may delay or skip a scheduled run when it is busy. Progress is durable, so a missed
   hour just means the next run has a little more to do.
+
+## Status page
+
+Every scheduled run also rebuilds a public status page (PRD DD-14): price movement, the
+biggest movers with card art, how each card is scheduled, the request budget and the cards
+pricewatch refuses to guess. It publishes derived numbers only: never the database, the
+export, quantities or the collection's total value.
+
+To preview it locally from any copy of the database:
+
+```powershell
+./pricewatch.exe site --db pricewatch.db --out site
+start site\index.html
+```
+
+One-time setup for publishing:
+
+1. Create a **public** repo named `pricewatch-site`, with no files.
+2. Create a fine-grained personal access token (GitHub → Settings → Developer settings →
+   Fine-grained tokens): repository access **only `pricewatch-site`**, permission
+   **Contents: Read and write**, and the longest expiry you're comfortable renewing.
+3. In `pricewatch-data`, add it as the Actions secret `SITE_TOKEN`.
+4. Copy the updated `deploy/github-actions/pricewatch.yml` over the data repo's
+   `.github/workflows/pricewatch.yml`, commit and push.
+5. Dispatch a `run`. When it's green, open `pricewatch-site` → **Settings → Pages** and set
+   the source to **Deploy from a branch**, `main`, `/ (root)`.
+
+When the token expires, the publish step fails but the database is still saved. Create a
+new token and replace the secret.
 
 ## What phase 1 does not do
 
