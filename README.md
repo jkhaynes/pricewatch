@@ -5,9 +5,9 @@ A Go CLI that tracks Pokémon TCG card prices for a collection exported from
 
 ## Status
 
-Phase 1 (FR-1 to FR-8) is complete and has passed acceptance testing against the real API.
-The design is in [`docs/PRD.md`](docs/PRD.md), and the build plan is in
-[`docs/superpowers/plans/2026-09-18-phase1.md`](docs/superpowers/plans/2026-09-18-phase1.md).
+Phase 1 (FR-1 to FR-8) and phase 2 (FR-10a value tiers, FR-14 scheduled runs) are complete.
+The design is in [`docs/PRD.md`](docs/PRD.md). The build plans are in
+[`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 ## Why this exists
 
@@ -25,14 +25,14 @@ progress lives in SQLite, so the next run carries on where the last one stopped.
    `region|expansion|number|variant|language`. Rows that can't be matched, or match more than
    one card, are **reported, never guessed**. A Normal and a Reverse Holo of the same card can
    differ in price by more than any movement being tracked.
-2. **`run`** picks the stalest cards and prices them through a bounded worker pool, within the
-   source's rate limits. It saves one observation per card and reports every card whose price
-   moved since *that card's* previous observation.
+2. **`run`** picks the cards that are due and prices them through a bounded worker pool,
+   within the source's rate limits. It saves one observation per card and reports every card
+   whose price moved since *that card's* previous observation.
 
-Choosing what to check next: cards never priced come first, then the least recently priced.
-Ties go to the most valuable card by export price (PRD DD-8), so the first pass prices your
-best cards first. One request prices every variant of a card, so the budget counts
-requests, not rows.
+Choosing what to check next: a card is due once its value tier's interval has passed (see
+[Value tiers](#value-tiers)). Cards never priced come first, then the most overdue, and ties
+go to the most valuable card (PRD DD-8, DD-12), so the first pass prices your best cards
+first. One request prices every variant of a card, so the budget counts requests, not rows.
 
 ## Setup
 
@@ -87,7 +87,7 @@ safe to stop with Ctrl-C and resume later.
 The output looks like this:
 
 ```text
-run 3 (pokewallet): 100 requests, 148 cards: ok 146, failed 2, abandoned 0, deferred 0
+run 3 (pokewallet): 38 requests, 52 cards: ok 50, failed 2, abandoned 0, deferred 0; 4886 cards not due yet
 
 changed since each card's previous observation:
   BEFORE    NOW  DELTA      %  CARD
@@ -102,6 +102,7 @@ What the counts mean:
 | **failed** | could not be priced. A variant the source doesn't offer, or a card it no longer knows, is reported and removed from rotation; other errors are logged and retried on a later run |
 | **abandoned** | in flight when you pressed Ctrl-C twice |
 | **deferred** | not priced this run, and **not a failure**: the budget ran out, you stopped the run, or the source said "limit reached". These cards come first next run |
+| **not due yet** | priced recently enough for its value tier (see below). Skipped on purpose, so a run can finish with budget to spare |
 
 **Ctrl-C:**
 - Press it **once** to stop starting new cards. Cards in flight finish and are saved.
@@ -115,6 +116,7 @@ What the counts mean:
 | `--source` | both | `pokewallet` | price source |
 | `--expansions` | import | none | CSV of `expansion,set_id` overrides |
 | `--budget` | run | `100` | maximum requests (source cards) this run |
+| `--no-wait` | run | off | when the hour's allowance is spent, stop and defer the rest instead of waiting (scheduled runs) |
 | `--workers` | run | `2` | concurrent workers |
 | `--timeout` | both | `15s` | per-request timeout |
 | `--base-url` | both | the source's | override the API base URL |
@@ -127,7 +129,7 @@ itself against PokéWallet's own count of what's left (PRD DD-11):
   a 100-request run takes about a minute.
 - **Once the hour's allowance is spent, it pauses** until PokéWallet's allowance resets at
   the top of the next hour (plus 30 seconds' margin), and logs that it's waiting. Ctrl-C
-  interrupts the pause as usual.
+  interrupts the pause as usual. With `--no-wait`, it stops instead and defers the rest.
 - The daily count is stored in the database and corrected from the response headers, so
   restarts can't overspend it.
 - If a command starts while the hour is already used up, PokéWallet's first answer is "too
@@ -135,15 +137,78 @@ itself against PokéWallet's own count of what's left (PRD DD-11):
   carries on, so re-running a command is always safe.
 - When the daily limit is reached, the run stops cleanly and the remaining cards are deferred.
 
+### Value tiers
+
+A run prices only the cards that are due. How often a card is due depends on its value: its
+latest market price, or the export price until it has one (PRD DD-12).
+
+| Value | Checked every |
+|---|---|
+| $100+ | 1 day |
+| $20 to $100 | 2 days |
+| $5 to $20 | 4 days |
+| under $5 | 7 days |
+
+Never-priced cards come first, then the most overdue, then the most valuable. With about
+4,900 priceable cards that is roughly 915 requests a day, just under the daily 1,000.
+
+## Scheduled runs on GitHub Actions
+
+pricewatch runs every hour on GitHub Actions, so your computer doesn't need to be on (PRD
+DD-13). The workflow lives in a separate **private** repo, because the database and the
+export are personal data and this repo is public.
+
+One-time setup:
+
+1. Create a private repo, for example `pricewatch-data`.
+2. In its **Settings → Secrets and variables → Actions**, add the secret
+   `POKEWALLET_API_KEY`.
+3. Add the data and the workflow to its `main` branch:
+
+   ```powershell
+   git clone https://github.com/<you>/pricewatch-data.git
+   cd pricewatch-data
+   Copy-Item ..\pricewatch\data\export.csv, ..\pricewatch\data\expansions.csv .
+   New-Item -ItemType Directory -Force .github\workflows
+   Copy-Item ..\pricewatch\deploy\github-actions\pricewatch.yml .github\workflows\
+   git add .
+   git commit -m "collection and workflow"
+   git push
+   ```
+
+4. Seed the `db` branch with your local database, so nothing is resolved twice. Close any
+   pricewatch command or database viewer first, so the file is complete:
+
+   ```powershell
+   git switch --orphan db
+   Copy-Item ..\pricewatch\pricewatch.db .
+   git add -f pricewatch.db
+   git commit -m "seed database"
+   git push -u origin db
+   git switch main
+   ```
+
+   If you have no local database, dispatch an **import** instead (step 5).
+
+5. Under **Actions → pricewatch → Run workflow**, choose `run` to check it works. From then on
+   it runs hourly at seven minutes past.
+
+After that:
+- **Reports** are in each run's log, on the Actions tab.
+- **New export:** commit the new `export.csv` to `main` and dispatch an `import`.
+- **Looking at the data locally:** download `pricewatch.db` from the `db` branch. The cloud
+  copy is the source of truth. A local run against a downloaded copy is not merged back.
+- GitHub may delay or skip a scheduled run when it is busy. Progress is durable, so a missed
+  hour just means the next run has a little more to do.
+
 ## What phase 1 does not do
 
 - **Condition:** prices are TCGplayer market prices, and the condition column is ignored.
 - **Special prints:** ball-pattern and Energy reverse holos, Cosmos, Prize Pack, stamps and
   promos (about 9% of the author's collection) are reported as `unsupported variant`.
-- **Value weighting and scheduled runs** are phase 2. Retry with backoff arrives in phase 3
-  with the job queue; until then, a card that fails transiently is simply first in line on
-  the next run. A second source (TCGdex) is a future idea. See PRD sections 10 and 13 for
-  the roadmap and future ideas.
+- **Retry with backoff** arrives in phase 3 with the job queue. Until then, a card that fails
+  transiently is simply first in line on the next run. A second source (TCGdex) is a future
+  idea. See PRD sections 10 and 13.
 
 ## Adding a price source
 
