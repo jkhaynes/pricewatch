@@ -276,3 +276,32 @@ func TestClientNeverOverspendsPokeWalletsHourlyLimit(t *testing.T) {
 		t.Fatalf("err = %v, want the wait for the hourly window to be cut short by the deadline", err)
 	}
 }
+
+// A bracket holding the card's own number, prefix and all, names the card's own
+// print: Hidden Fates Shiny Vault lists "Lycanroc GX (SV66)" at SV66/SV94.
+func TestCardsQualifierMatchingTheCardsOwnNumber(t *testing.T) {
+	tests := []struct {
+		name, number string
+		wantAliases  []string
+	}{
+		{"Lycanroc GX (SV66)", "SV66/SV94", []string{"Lycanroc GX"}},
+		{"Lycanroc GX (sv67)", "SV67/SV94", []string{"Lycanroc GX"}},
+		{"Lycanroc GX (SV67)", "SV66/SV94", nil}, // a different number: not this card's own print
+		{"Charizard (GG)", "GG01/GG70", nil},     // a prefix alone is not a number
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" at "+tt.number, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"cards":      []any{map[string]any{"id": "pk_x", "card_info": map[string]any{"name": tt.name, "card_number": tt.number}}},
+				"pagination": map[string]any{"page": 1, "total_pages": 1},
+			})
+			cards, err := New(fakeGetter{"/sets/s?page=1&limit=50": string(body)}).Cards(t.Context(), "s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cards[0].Aliases; !slices.Equal(got, tt.wantAliases) {
+				t.Errorf("Aliases = %q, want %q", got, tt.wantAliases)
+			}
+		})
+	}
+}

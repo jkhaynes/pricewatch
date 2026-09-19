@@ -130,7 +130,7 @@ func (p *Provider) Cards(ctx context.Context, setID string) ([]card.SourceCard, 
 				ID:      c.ID,
 				Number:  local,
 				Name:    name,
-				Aliases: aliases(name),
+				Aliases: aliases(name, local),
 			})
 		}
 		if page >= resp.Pagination.TotalPages {
@@ -163,15 +163,18 @@ var ownPrint = map[string]bool{
 
 // aliases strips trailing qualifiers one at a time, as in
 // "Gardevoir & Sylveon GX (205) (Alternate Full Art)". Every one must be
-// allowed: a single qualifier marking a different print means no alias at all.
-func aliases(name string) []string {
+// allowed: a number, the card's own number with its prefix ("(SV66)" at
+// SV66/SV94), or an ownPrint qualifier. A single qualifier marking a different
+// print means no alias at all.
+func aliases(name, number string) []string {
 	base := name
 	for {
 		m := trailingQualifier.FindStringSubmatch(base)
 		if m == nil {
 			break
 		}
-		if q := strings.ToLower(m[2]); !digitsOnly.MatchString(q) && !ownPrint[q] {
+		q := strings.ToLower(m[2])
+		if !digitsOnly.MatchString(q) && !strings.EqualFold(q, number) && !ownPrint[q] {
 			return nil
 		}
 		base = m[1]
