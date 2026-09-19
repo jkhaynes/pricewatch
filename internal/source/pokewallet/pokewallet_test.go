@@ -305,3 +305,31 @@ func TestCardsQualifierMatchingTheCardsOwnNumber(t *testing.T) {
 		})
 	}
 }
+
+// The card's art comes from the TCGplayer product in the same response, so it
+// costs no extra requests (DD-14).
+func TestQuoteCarriesTCGplayerArt(t *testing.T) {
+	const want = "https://tcgplayer-cdn.tcgplayer.com/product/83475_in_1000x1000.jpg"
+	tests := []struct {
+		name, body, want string
+	}{
+		{"product URL", `{"tcgplayer":{"url":"https://www.tcgplayer.com/product/83475","prices":[{"sub_type_name":"Normal","market_price":1}]}}`, want},
+		{"product URL with a slug", `{"tcgplayer":{"url":"https://www.tcgplayer.com/product/83475/pokemon-ruby-and-sapphire-aggron","prices":[{"sub_type_name":"Normal","market_price":1}]}}`, want},
+		{"no url", `{"tcgplayer":{"prices":[{"sub_type_name":"Normal","market_price":1}]}}`, ""},
+		{"no tcgplayer block", `{"tcgplayer":null}`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			qs, err := New(fakeGetter{"/cards/pk_x": tt.body}).Quote(t.Context(), "pk_x",
+				[]card.Variant{card.VariantNormal, card.VariantReverseHolo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, q := range qs {
+				if q.Image != tt.want {
+					t.Errorf("quote %d Image = %q, want %q", i, q.Image, tt.want)
+				}
+			}
+		})
+	}
+}

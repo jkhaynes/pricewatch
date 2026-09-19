@@ -17,6 +17,7 @@ type Store interface {
 	Candidates(ctx context.Context, source string) ([]card.Candidate, error)
 	Save(ctx context.Context, runID int64, obs card.Observation) error
 	PutMapping(ctx context.Context, m card.Mapping) error
+	PutArt(ctx context.Context, source, sourceCardID, url string) error
 	FinishRun(ctx context.Context, runID int64, ok, failed int) error
 	Changes(ctx context.Context, runID int64) ([]card.Change, error)
 }
@@ -144,6 +145,13 @@ func (r *Runner) handle(ctx, persist context.Context, runID int64, res Result, s
 	}
 
 	now := r.now()
+	// The request succeeded, so its art is worth keeping. A failure here costs
+	// the page a picture, never the card its price.
+	if img := res.Quotes[0].Image; img != "" {
+		if err := r.Store.PutArt(persist, r.SourceName, res.Job.SourceCardID, img); err != nil {
+			r.Log.Error("save card art", "card", res.Job.SourceCardID, "err", err)
+		}
+	}
 	for i, q := range res.Quotes {
 		key := res.Job.Targets[i].Key
 		switch {

@@ -59,3 +59,11 @@ CREATE TABLE IF NOT EXISTS quota (
   used   INTEGER NOT NULL,
   PRIMARY KEY (source, day)
 );
+
+-- Card art for the status page (DD-14), one per source card.
+CREATE TABLE IF NOT EXISTS card_art (
+  source         TEXT NOT NULL,
+  source_card_id TEXT NOT NULL,
+  image_url      TEXT NOT NULL,
+  PRIMARY KEY (source, source_card_id)
+);

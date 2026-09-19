@@ -246,3 +246,21 @@ func TestCandidatesAreFastAtCollectionScale(t *testing.T) {
 		t.Fatalf("Candidates = %d, %v; want %d candidates within 3 s", len(got), err, n/2)
 	}
 }
+
+func TestPutArtUpserts(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	for _, url := range []string{"https://img/old.jpg", "https://img/new.jpg"} {
+		if err := s.PutArt(ctx, "pw", "pk_A", url); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got string
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT image_url, COUNT(*) FROM card_art WHERE source='pw' AND source_card_id='pk_A'`).Scan(&got, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || got != "https://img/new.jpg" {
+		t.Errorf("card_art = %q (%d rows), want the latest URL in one row", got, n)
+	}
+}
