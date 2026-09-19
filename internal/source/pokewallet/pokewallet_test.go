@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -75,8 +76,56 @@ func TestCardsPaginatesAndCleans(t *testing.T) {
 		{ID: "pk_3", Number: "3", Name: "Blaziken"},
 		{ID: "pk_100", Number: "100", Name: "Magmar ex"},
 	}
-	if !slices.Equal(cards, want) {
+	// SourceCard holds a slice (Aliases), so it is not comparable with ==.
+	if !reflect.DeepEqual(cards, want) {
 		t.Errorf("Cards = %+v", cards)
+	}
+}
+
+// Qualifiers seen in the real import (2026-09-19). Only those naming the card's
+// own print get a bare-name alias. Pattern prints, error prints and special
+// releases share a number with a different card, so aliasing them would price
+// the wrong print.
+func TestCardsQualifierAliases(t *testing.T) {
+	tests := []struct {
+		name        string
+		wantAliases []string
+	}{
+		{"Whismur (117)", []string{"Whismur"}},
+		{"Gardenia (Full Art)", []string{"Gardenia"}},
+		{"Pikachu (Secret)", []string{"Pikachu"}},
+		{"Pheromosa GX (Secret Rare)", []string{"Pheromosa GX"}},
+		{"Mewtwo V (Alternate Full Art)", []string{"Mewtwo V"}},
+		{"Fire Energy (Texture Full Art)", []string{"Fire Energy"}},
+		{"Bulbasaur (Holo Common)", []string{"Bulbasaur"}},
+		{"Zacian V (Shiny)", []string{"Zacian V"}},
+		{"Mewtwo GX (Secret Shining)", []string{"Mewtwo GX"}},
+		{"Sylveon VMAX (Alternate Art Secret)", []string{"Sylveon VMAX"}},
+		{"Pansear (Poke Ball Pattern)", nil},
+		{"Sewaddle (Master Ball Pattern)", nil},
+		{"Charizard (Black Dot Error)", nil},
+		{"N's Zekrom - 031 (Pokemon Center Exclusive)", nil},
+		{"Feraligatr - 213 (Illustration Contest 2024)", nil},
+		{"Glaceon ex - 026/131 (Holiday Calendar)", nil},
+		{"Magmar ex", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"cards":      []any{map[string]any{"id": "pk_x", "card_info": map[string]any{"name": tt.name, "card_number": "117/168"}}},
+				"pagination": map[string]any{"page": 1, "total_pages": 1},
+			})
+			cards, err := New(fakeGetter{"/sets/s?page=1&limit=50": string(body)}).Cards(t.Context(), "s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cards[0].Aliases; !slices.Equal(got, tt.wantAliases) {
+				t.Errorf("Aliases = %q, want %q", got, tt.wantAliases)
+			}
+			if cards[0].Name != tt.name {
+				t.Errorf("Name = %q; the full name must be kept for exact matching and reports", cards[0].Name)
+			}
+		})
 	}
 }
 

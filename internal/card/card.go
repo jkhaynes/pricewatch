@@ -95,8 +95,13 @@ type SourceSet struct {
 
 // SourceCard is a card within a SourceSet. Providers clean Name (no "- 59/109"
 // suffixes) and put only the local part of the number in Number ("59", "009").
+// Aliases are extra names the card may be matched by, but only when no card at
+// the same number matches Name exactly. Providers add them for qualifiers that
+// name the card's own print ("Whismur (117)" -> "Whismur"), never for ones that
+// mark a different print at the same number.
 type SourceCard struct {
-	ID     string
-	Number string
-	Name   string
+	ID      string
+	Number  string
+	Name    string
+	Aliases []string
 }

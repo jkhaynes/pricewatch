@@ -103,16 +103,51 @@ func (p *Provider) Cards(ctx context.Context, setID string) ([]card.SourceCard, 
 		for _, c := range resp.Cards {
 			number := c.CardInfo.CardNumber
 			local, _, _ := strings.Cut(number, "/")
+			name := strings.TrimSuffix(c.CardInfo.Name, " - "+number)
 			out = append(out, card.SourceCard{
-				ID:     c.ID,
-				Number: local,
-				Name:   strings.TrimSuffix(c.CardInfo.Name, " - "+number),
+				ID:      c.ID,
+				Number:  local,
+				Name:    name,
+				Aliases: aliases(name),
 			})
 		}
 		if page >= resp.Pagination.TotalPages {
 			return out, nil
 		}
 	}
+}
+
+// trailingQualifier splits "Whismur (117)" into "Whismur" and "117".
+var trailingQualifier = regexp.MustCompile(`^(.+?)\s+\(([^()]+)\)$`)
+
+var digitsOnly = regexp.MustCompile(`^\d+$`)
+
+// ownPrint lists the qualifiers PokeWallet uses for a card's own print, which
+// has its own number. It is an allow-list on purpose: anything else, such as
+// "(Poke Ball Pattern)", "(Black Dot Error)" or "(Pokemon Center Exclusive)",
+// marks a different print that shares a number with the plain card, and gets
+// no alias. New qualifiers stay unmatched, and are reported, until added here.
+var ownPrint = map[string]bool{
+	"full art":             true,
+	"alternate full art":   true,
+	"texture full art":     true,
+	"secret":               true,
+	"secret rare":          true,
+	"secret shining":       true,
+	"alternate art secret": true,
+	"shiny":                true,
+	"holo common":          true,
+}
+
+func aliases(name string) []string {
+	m := trailingQualifier.FindStringSubmatch(name)
+	if m == nil {
+		return nil
+	}
+	if q := strings.ToLower(m[2]); digitsOnly.MatchString(q) || ownPrint[q] {
+		return []string{m[1]}
+	}
+	return nil
 }
 
 func (p *Provider) Quote(ctx context.Context, sourceCardID string, variants []card.Variant) ([]card.Quote, error) {
