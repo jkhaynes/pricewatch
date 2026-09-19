@@ -33,7 +33,7 @@ Two things made this a better vehicle than a toy project:
 - Matching records across two systems that share no key is a genuine data problem, and it
   fails silently if you get it wrong.
 
-Phase 3 adds a message broker, which the workload justifies on its own terms: work that
+Phase 4 adds a message broker, which the workload justifies on its own terms: work that
 spans days, must survive restarts, and needs retry with dead-lettering.
 
 A secondary goal is a written comparison of Go against nine years of C#, which lives in
@@ -50,11 +50,11 @@ the README.
 ## 4. Non-goals
 
 - Not a product for anyone else to run or deploy
-- Not a web application, API, or UI. The one planned exception is phase 4's local, read-only
-  dashboard (DD-10), which changes none of the other non-goals
+- Not a web application, API, or UI. The one planned exception is phase 3's public, static
+  status page (DD-14): generated files only, no server, no API, no interaction beyond reading
 - Not a general TCG platform. Pokémon only, one source at a time
-- No authentication, multi-user support, or hosting. The one exception is DD-13's scheduled
-  batch job on the author's own GitHub account, which serves nothing and nobody else
+- No authentication, multi-user support, or hosting. The exceptions, both on the author's own
+  GitHub account, are DD-13's scheduled batch job and DD-14's static page on GitHub Pages
 - Not optimizing for coverage or completeness over learning
 
 ## 5. Users
@@ -80,14 +80,14 @@ keep the project honest, not enough to justify building for them.
 | FR-6 | Persist one price observation per card per run | P0 |
 | FR-7 | Report cards whose price changed since that card's previous observation, not since the previous run | P0 |
 | FR-8 | Ctrl-C cancels cleanly without dropping in-flight work | P0 |
-| FR-9 | Retry transient failures with backoff. Moved to phase 3 (2026-09-19): delivered by the queue's requeue and dead-lettering (FR-11) | P2 |
+| FR-9 | Retry transient failures with backoff. Moved to phase 4 (2026-09-19; the broker moved from phase 3 to 4 the same day): delivered by the queue's requeue and dead-lettering (FR-11) | P2 |
 | FR-10 | A second price source implementation, swappable by flag. Moved out of phase 2 to section 13, idea 5 (2026-09-19) | Idea |
 | FR-10a | Weight check priority by card value, so a $400 card is checked more often than a $0.06 one | P1 |
 | FR-11 | Durable job queue with acks, retry and dead-lettering | P2 |
 | FR-12 | Publish price events consumed independently by persister, mover detector and notifier | P2 |
 | FR-13 | Discord webhook on significant price movement | P2 |
 | FR-14 | Runs execute unattended on a schedule, never overlap, and write their report somewhere readable afterwards | P1 |
-| FR-15 | A local, read-only dashboard: collection value over time with pricing coverage, biggest movers, and unresolved cards | P3 |
+| FR-15 | A public, static status page: price movement and coverage, biggest movers with card art, how cards are scheduled, the request budget, and unresolved cards (DD-14) | P1 |
 
 ## 7. Technical design
 
@@ -211,10 +211,10 @@ before any code was written. The source is the least stable part of the system.
 
 **Decision:** the pipeline consumes `<-chan Job` and never learns where jobs originate.
 
-**Rationale:** in v1 a database query fills the channel. In phase 3 a RabbitMQ consumer fills
+**Rationale:** in v1 a database query fills the channel. In phase 4 a RabbitMQ consumer fills
 the same channel. The worker code does not change.
 
-### DD-3: RabbitMQ over Kafka for phase 3
+### DD-3: RabbitMQ over Kafka for phase 4
 
 **Decision:** RabbitMQ.
 
@@ -292,7 +292,7 @@ expensive one. Checking valuable cards more often remains the phase 2 refinement
 **Decision:** in phase 2, unattended runs are started by an external scheduler (a GitHub
 Actions cron, DD-13) running `pricewatch run`. Pricewatch gains no daemon of its own. Runs
 must not overlap, and the scheduler is what prevents it. Each run's report goes to the
-scheduler's logs, since nobody reads its terminal. In phase 3 the same scheduler
+scheduler's logs, since nobody reads its terminal. In phase 4 the same scheduler
 triggers the producer that queues the stalest cards, and the RabbitMQ consumer runs
 continuously.
 
@@ -320,13 +320,19 @@ easy to inspect.
   `--log` considered for a local scheduler are dropped: the runner is the only writer of its
   database copy, and the workflow keeps each run's logs.
 
-**Phase 3 experiment, not a commitment:** broker-side rescheduling, where a priced card is
+**Phase 4 experiment, not a commitment:** broker-side rescheduling, where a priced card is
 republished with a TTL and dead-lettered back into the work queue when it is due, is a
 worthwhile RabbitMQ exercise and a natural fit for value weighting (FR-10a). If tried, its
 schedule is only a hint. A periodic sweep re-queues anything the database says is overdue,
 because a purged queue or a lost message would otherwise drop a card from rotation silently.
 
-### DD-10: The phase 4 dashboard is local and read-only
+### DD-10: The phase 4 dashboard is local and read-only (superseded by DD-14)
+
+**Superseded 2026-09-19 by DD-14.** Once runs moved to GitHub Actions (DD-13), a local server
+would only ever read a downloaded copy, and the audience turned out to be engineers and
+hiring managers following a link, not the author at a terminal. The caveats and the "value as
+of day X" prerequisite below still apply to DD-14. The original decision is kept for the
+record.
 
 **Decision:** phase 4 adds `pricewatch serve`, an HTTP server bound to `127.0.0.1` for the
 author only. It reads the existing database and never writes to it. It has no
@@ -500,6 +506,97 @@ users.
 durable progress absorbs that. Scheduled workflows are disabled after 60 days without repo
 activity, but each run's push to `db` counts as activity.
 
+### DD-14: A public, static status page, rebuilt after every run
+
+**Decision (2026-09-19):** phase 3 publishes a static page about the real collection, for
+engineers and hiring managers who follow a link from the README. It replaces DD-10's local
+dashboard. There is no local page.
+
+- **Built by the scheduled job.** After each run, the DD-13 workflow runs a new command,
+  `pricewatch site`, which writes the page and a data file of **derived numbers only**.
+- **Published to a separate public repo** served by GitHub Pages. The data repo's built-in
+  token cannot write to another repo, so the job uses a fine-grained token limited to writing
+  that one repo, stored as a second secret.
+- **Never published:** the database, the export, or anything a reader could turn back into
+  them.
+- **Real data, totals hidden.** The page shows the author's actual collection; sharing a
+  collection is normal in the hobby. It leads with movement and coverage, not the dollar
+  total, which would read as bragging and pairs a value with a real name.
+- **Movement is a price index,** comparing only cards priced at both ends of the period.
+  A plain value-over-time line rises during the first pass just because coverage rises
+  (DD-10's caveats), and would mislead.
+
+**Sections:**
+1. Header: pitch, "updated N min ago · next run in M min", the last 24 runs as status dots.
+2. Headline: the price index over 7 and 30 days, and coverage (cards and share of value priced).
+3. Movers: top risers and fallers with card art, % change and a variant chip.
+4. Scheduling: the DD-12 tiers with live counts, and a freshness map with one tile per card.
+
+**Movers (decided 2026-09-19): a spotlight.**
+- **Layout:** the biggest mover gets large card art and a price-history chart with one dot
+  per actual check, so the chart also shows its tier's rhythm. The next three risers and the
+  top four fallers follow as a short list, each with a variant chip and % change.
+- **Window:** 7 days. The latest price is compared with the last price seen at least 7 days
+  earlier. "Since the previous check" would mean a day for some tiers and a week for others.
+- **Ranking:** by % change, counting only cards worth at least $1 that moved at least $0.50.
+  Without that floor, a $0.20 card moving to $0.35 (+75%) would top the list.
+- **Both directions:** fallers are shown as prominently as risers.
+- **Why 7 days:** it is the longest DD-12 interval, so every priced card has had at least one
+  fresh check inside the window and all cards are ranked over roughly the same span. A
+  shorter window would only ever show daily-checked cards. "Since the previous check" would
+  pit a $400 card's 1-day move against a $3 card's 7-day move. Weekly cards still span 7 to
+  14 days, since their latest price can itself be up to a week old.
+- **A "Today" strip under the spotlight,** for the $100+ tier only. It shows the five largest
+  moves by absolute % among cards checked in the last 24 hours, each against its previous
+  check, with the same $0.50 floor. That comparison is fair because every card in the tier
+  runs on the same daily clock, and it gives returning visitors something new each day.
+- **A first price is never a move.** A card without a baseline, meaning no observed market
+  price at least 7 days earlier (or, for the strip, no previous check), is left out of the
+  movers, the strip and the price index. The export price is never a baseline, and neither
+  is an observation without a market price. It is the same rule `store.Changes` and
+  `card.Compare` already apply for the CLI report.
+- **Empty states:** until cards have a week of history, the section says "Movers appear once
+  cards have a week of history" instead of showing an empty box. The strip says the same
+  after its first day.
+
+**Freshness map (decided 2026-09-19): bands by value tier.**
+- **One tile per source card,** the unit one request prices, coloured by the share of its own
+  tier's interval used: fresh to due, then red for overdue, and a separate colour for never
+  priced. So a $400 card checked 20 hours ago and a $0.06 card checked 6 days ago both read
+  "nearly due".
+- **One band per DD-12 tier,** sorted most urgent first, each labelled with its interval, its
+  count and how many cards are due now. A tier falling behind shows as a growing red edge.
+- **Unresolved rows get their own hatched band,** so coverage never looks complete when it is
+  not.
+- **Hovering a tile** shows the card, when it was checked, and when it is next due. That puts
+  card names in the published data, which the movers section publishes anyway.
+- **Rejected:** a binder by set (freshness reads as noise, since every set mixes tiers) and a
+  due-queue histogram (too abstract to stand alone).
+- Mockups: https://claude.ai/artifact/1qQfWGEmvu8sdbG83cfRvP
+5. Budget: today's requests against the 1,000 limit, and requests per hour.
+6. What it refuses to guess: unresolved cards by reason, with the Tropius example.
+7. Footer: an architecture sketch and a link to the code repo.
+
+**Card images (decided 2026-09-19): link to TCGplayer's image CDN by product ID,** for
+example `https://tcgplayer-cdn.tcgplayer.com/product/83475_200w.jpg`.
+- **Where the ID comes from:** every `/cards` response already carries the TCGplayer product
+  URL (`tcgplayer.url`), so the provider stores its product ID alongside the price. It costs
+  no extra requests.
+- **If an image fails to load,** the page shows a plain tile with the card's name and number.
+  A broken image never breaks the page.
+- **Rejected:** PokéWallet's own `/images/:id`. It needs the API key, so the job would have to
+  download and republish each image at one request per card from the roughly 85 spare a day.
+  It stays available if the TCGplayer address ever changes.
+- **Known risk:** the CDN address is unofficial and could change or block linking. The
+  fallback tile keeps the page usable if it does.
+
+**Rationale:** the audience judges how constraints were handled, so the page makes the
+constraints visible: the budget, the scheduler and the refusal to guess. A static page needs
+no server, and regenerating it hourly doubles as visible proof that the schedule works.
+
+**Scope:** this narrows section 4's "not a UI" and "no hosting" non-goals to generated static
+files on GitHub Pages. No server, no API, no accounts, no interaction beyond reading.
+
 ## 9. Acceptance criteria, v1
 
 - [x] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
@@ -520,30 +617,41 @@ activity, but each run's push to `db` counts as activity.
 **Phase 2, v1.1.** FR-10a, FR-14. Value-weighted priority, and unattended scheduled runs
 on GitHub Actions (DD-9, DD-13). Two items moved out on 2026-09-19:
 - **A second price source (FR-10)** is now a future idea (section 13, idea 5).
-- **Retry with backoff (FR-9)** moved to phase 3. The phase 1 design already covers most of
+- **Retry with backoff (FR-9)** moved to the broker phase, now phase 4. The phase 1 design already covers most of
   what it was for: a card that fails transiently keeps its mapping and gets no observation,
   so it stays stalest and comes first in the next run, which is within the hour once runs are
   scheduled. Hourly 429s are waited out (DD-11). Building an in-process retry loop now would
-  duplicate what the phase 3 queue provides natively (DD-3). The one real gap is that
+  duplicate what the phase 4 queue provides natively (DD-3). The one real gap is that
   `import` stops at the first catalog error. If a network blip ever does halt a long import
-  before phase 3, a small retry of transient catalog errors can be added as a fix.
+  before phase 4, a small retry of transient catalog errors can be added as a fix.
 
-**Phase 3, v2.** FR-9, FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event
+**Phase 3, v1.2.** FR-15. The public, static status page (DD-14), rebuilt by the scheduled
+job after every run. Swapped ahead of the broker on 2026-09-19: it depends only on phase 2,
+it makes the project demonstrable, and the broker has an open question about running on
+GitHub Actions (section 11).
+
+**Phase 4, v2.** FR-9, FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event
 fan-out to independent consumers, Discord notification. This is the phase that addresses the
 messaging gap. It also delivers retry with backoff (FR-9) through the broker's requeue with
-delay and dead-lettering, rather than a separate retry loop. The phase 2 scheduler now
-triggers the producer, and the consumer runs continuously (DD-9).
-
-**Phase 4, v3 (future, not committed).** FR-15. A local, read-only dashboard served by
-`pricewatch serve` (DD-10). It opens section 4 only as far as DD-10 states, and starts only
-after phase 3, so it can consume the price events.
+delay and dead-lettering, rather than a separate retry loop. The phase 2 scheduler triggers
+the producer (DD-9).
 
 Each phase leaves something complete.
 
 ## 11. Open questions
 
+### Open
+
+- **The broker on GitHub Actions (phase 4).** DD-9 describes the RabbitMQ consumer as running
+  continuously, but an Actions job is short-lived. Either the broker runs inside each hourly
+  job, keeping acks, retry and dead-lettering but no queue that outlives the job, or phase 4
+  needs somewhere that stays up, which section 4 rules out. Decide before planning phase 4.
+
 ### Resolved
 
+- **Card images for the status page.** Link to TCGplayer's image CDN by the product ID
+  already in each `/cards` response, with a plain fallback tile (DD-14, 2026-09-19).
+  PokéWallet's own images need the API key, so they can't be linked from a public page.
 - **Which price source.** pokemontcg.io is deprecated: new registrations closed, existing keys
   work only through 2027-03-01. **PokeWallet is the primary source.** TCGdex is the best
   candidate for a second source, which is now a future idea (section 13, idea 5); see "which
@@ -584,12 +692,13 @@ Each phase leaves something complete.
 | Risk | Mitigation |
 |---|---|
 | Free API changes or disappears again | DD-1. The interface exists for exactly this |
-| Scope creep into a web UI or a product | Section 4. Non-goals are explicit. The only planned UI is phase 4's local, read-only dashboard, bounded by DD-10 and not started before phase 3 |
+| Scope creep into a web UI or a product | Section 4. Non-goals are explicit. The only planned UI is phase 3's static status page, bounded by DD-14: generated files, no server, no API |
+| The public page leaks personal data | DD-14. The job publishes derived numbers only, never the database or the export, and hides the collection total |
 | Overlapping scheduled runs price the same cards twice | DD-9, DD-13. The workflow's `concurrency` group queues runs one behind another |
 | The cloud database is lost or corrupted | DD-13. The database is pushed back only after a successful run, the WAL is checkpointed on close, and the author can download a copy at any time |
 | GitHub delays, drops or disables scheduled runs | DD-7, DD-13. Progress is durable, so a missed hour costs only that hour, and each run's push keeps the repo active |
 | Bursting overspends the hourly allowance, for example after a restart | DD-11. The server's own hourly count is the source of truth, requests are reserved before sending, and a 429 still stops dispatch cleanly |
-| Phase 3 never happens | DD-2 keeps the cost of phase 3 low, and phase 1 stands on its own |
+| Phase 4 never happens | DD-2 keeps the cost of the broker low, and phases 1 to 3 stand on their own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
 | Variant mismatches produce silently wrong prices | DD-5. Treat ambiguous matches as failures, not guesses |
 | Expansion display name to set code has no clean mapping source | Maintain it as data. Seed from the source API's set list, accept manual entries for the long tail |
