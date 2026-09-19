@@ -379,8 +379,9 @@ Each phase leaves something complete.
 ### Resolved
 
 - **Which price source.** pokemontcg.io is deprecated: new registrations closed, existing keys
-  work only through 2027-03-01. Use TCGdex or PokeWallet as primary. An existing pokemontcg.io
-  key becomes the second implementation.
+  work only through 2027-03-01. **PokeWallet is the primary source and TCGdex is the second
+  implementation (FR-10)**; see "which source handles variants best" below. pokemontcg.io is
+  not planned as a source, because its keys stop working in 2027.
 - **Where the card list comes from.** A TCG Collector collection export.
 - **Collection scale.** Roughly 8,000 to 9,000 rows.
 - **Which source handles variants best.** Both separate variants. They resell the same
@@ -396,11 +397,13 @@ Each phase leaves something complete.
   - TCGdex, with no published limit, is the planned second source (FR-10).
   - A variant must match exactly one of the source's price sub-types. None or several is
     reported, never guessed (DD-5).
+- **Whether to price by condition (v1).** No. v1 records the TCGplayer market price only, and
+  the export's condition column is stored but ignored. The real export holds only Mint
+  (7,915 rows) and Near Mint (847), so ignoring condition costs little today.
+  Condition-aware pricing is the first idea in section 13.
 
 ### Still open
 
-- **Whether to price by condition.** The export carries a condition column and conditions
-  differ a lot in value. Simplest v1 is market price only, stated explicitly.
 - Whether graded pricing ever matters enough to justify Scrydex at $29/month.
 - **When the source's daily quota resets.** The quota table counts per UTC day and resyncs
   from the source's headers, but PokeWallet does not document its reset time. Scheduled runs
@@ -419,6 +422,22 @@ Each phase leaves something complete.
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
 | Variant mismatches produce silently wrong prices | DD-5. Treat ambiguous matches as failures, not guesses |
 | Expansion display name to set code has no clean mapping source | Maintain it as data. Seed from the source API's set list, accept manual entries for the long tail |
+
+## 13. Ideas for future extensions
+
+Candidates, not commitments. None belongs to a phase until it is promoted into a numbered
+FR, and one that changes a non-goal or a settled decision needs a DD of its own, as DD-10
+did for the dashboard.
+
+1. **Condition-aware pricing.** Value each row at a price for its own condition rather than
+   the single market price v1 records. Things to settle first:
+   - which source offers prices per condition (TCGplayer's market price does not
+     distinguish);
+   - how TCG Collector's condition labels map onto that source's grades;
+   - how condition interacts with change detection. A card's history must stay comparable
+     if its recorded condition changes between imports.
+
+   The export already carries the condition, so no new data is needed on the collection side.
 
 ## Appendix A: price source comparison
 
