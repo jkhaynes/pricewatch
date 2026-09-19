@@ -79,7 +79,7 @@ keep the project honest, not enough to justify building for them.
 | FR-6 | Persist one price observation per card per run | P0 |
 | FR-7 | Report cards whose price changed since that card's previous observation, not since the previous run | P0 |
 | FR-8 | Ctrl-C cancels cleanly without dropping in-flight work | P0 |
-| FR-9 | Retry transient failures with backoff | P1 |
+| FR-9 | Retry transient failures with backoff. Moved to phase 3 (2026-09-19): delivered by the queue's requeue and dead-lettering (FR-11) | P2 |
 | FR-10 | A second price source implementation, swappable by flag. Moved out of phase 2 to section 13, idea 5 (2026-09-19) | Idea |
 | FR-10a | Weight check priority by card value, so a $400 card is checked more often than a $0.06 one | P1 |
 | FR-11 | Durable job queue with acks, retry and dead-lettering | P2 |
@@ -425,14 +425,22 @@ in the first few minutes.
 
 **Phase 1, v1.** FR-1 through FR-8. Complete and useful on its own.
 
-**Phase 2, v1.1.** FR-9, FR-10a, FR-14. Retry with backoff, value-weighted priority, and
-unattended scheduled runs through the OS scheduler (DD-9). A second price source (FR-10) is
-no longer part of this phase; it is a future idea (section 13, idea 5).
+**Phase 2, v1.1.** FR-10a, FR-14. Value-weighted priority, and unattended scheduled runs
+through the OS scheduler (DD-9). Two items moved out on 2026-09-19:
+- **A second price source (FR-10)** is now a future idea (section 13, idea 5).
+- **Retry with backoff (FR-9)** moved to phase 3. The phase 1 design already covers most of
+  what it was for: a card that fails transiently keeps its mapping and gets no observation,
+  so it stays stalest and comes first in the next run, which is within the hour once runs are
+  scheduled. Hourly 429s are waited out (DD-11). Building an in-process retry loop now would
+  duplicate what the phase 3 queue provides natively (DD-3). The one real gap is that
+  `import` stops at the first catalog error. If a network blip ever does halt a long import
+  before phase 3, a small retry of transient catalog errors can be added as a fix.
 
-**Phase 3, v2.** FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event fan-out
-to independent consumers, Discord notification. This is the phase that addresses the
-messaging gap. The phase 2 scheduler now triggers the producer, and the consumer runs
-continuously (DD-9).
+**Phase 3, v2.** FR-9, FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event
+fan-out to independent consumers, Discord notification. This is the phase that addresses the
+messaging gap. It also delivers retry with backoff (FR-9) through the broker's requeue with
+delay and dead-lettering, rather than a separate retry loop. The phase 2 scheduler now
+triggers the producer, and the consumer runs continuously (DD-9).
 
 **Phase 4, v3 (future, not committed).** FR-15. A local, read-only dashboard served by
 `pricewatch serve` (DD-10). It opens section 4 only as far as DD-10 states, and starts only
