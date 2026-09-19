@@ -410,16 +410,16 @@ in the first few minutes.
 
 ## 9. Acceptance criteria, v1
 
-- [ ] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
-- [ ] `pricewatch run` fetches prices for resolved cards and persists them
-- [ ] A second run continues from where the first stopped rather than starting over
-- [ ] Changes are reported against each card's previous observation
-- [ ] Cards are selected stalest first
-- [ ] An invalid card ID is logged and the run completes
-- [ ] The published rate limit is never exceeded
-- [ ] Ctrl-C mid-run exits cleanly with in-flight work either finished or explicitly abandoned
-- [ ] Table-driven tests covering the diff logic and at least one error path
-- [ ] README includes the Go versus C# section
+- [x] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
+- [x] `pricewatch run` fetches prices for resolved cards and persists them
+- [x] A second run continues from where the first stopped rather than starting over
+- [x] Changes are reported against each card's previous observation
+- [x] Cards are selected stalest first
+- [x] An invalid card ID is logged and the run completes
+- [x] The published rate limit is never exceeded
+- [x] Ctrl-C mid-run exits cleanly with in-flight work either finished or explicitly abandoned
+- [x] Table-driven tests covering the diff logic and at least one error path
+- [x] README includes the Go versus C# section
 
 ## 10. Phases
 

@@ -5,7 +5,7 @@ A Go CLI that tracks Pokémon TCG card prices for a collection exported from
 
 ## Status
 
-Phase 1 (FR-1 to FR-8) is implemented and under acceptance testing against the real API.
+Phase 1 (FR-1 to FR-8) is complete and has passed acceptance testing against the real API.
 The design is in [`docs/PRD.md`](docs/PRD.md), and the build plan is in
 [`docs/superpowers/plans/2026-09-18-phase1.md`](docs/superpowers/plans/2026-09-18-phase1.md).
 
