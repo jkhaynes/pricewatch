@@ -50,7 +50,8 @@ the README.
 ## 4. Non-goals
 
 - Not a product for anyone else to run or deploy
-- Not a web application, API, or UI
+- Not a web application, API, or UI. The one planned exception is phase 4's local, read-only
+  dashboard (DD-10), which changes none of the other non-goals
 - Not a general TCG platform. Pokémon only, one source at a time
 - No authentication, multi-user support, or hosting
 - Not optimizing for coverage or completeness over learning
@@ -84,6 +85,8 @@ keep the project honest, not enough to justify building for them.
 | FR-11 | Durable job queue with acks, retry and dead-lettering | P2 |
 | FR-12 | Publish price events consumed independently by persister, mover detector and notifier | P2 |
 | FR-13 | Discord webhook on significant price movement | P2 |
+| FR-14 | Runs execute unattended on a schedule, never overlap, and write their report somewhere readable afterwards | P1 |
+| FR-15 | A local, read-only dashboard: collection value over time with pricing coverage, biggest movers, and unresolved cards | P3 |
 
 ## 7. Technical design
 
@@ -283,6 +286,63 @@ runs in value order, later re-checks keep roughly that order.
 expensive one. Checking valuable cards more often remains the phase 2 refinement to DD-7
 (FR-10a). The snapshot price is used only for ordering, never reported as a market price.
 
+### DD-9: Scheduling is an external trigger; the database stays the source of truth
+
+**Decision:** in phase 2, unattended runs are started by the operating system's scheduler
+(Windows Task Scheduler, or cron elsewhere) running `pricewatch run`. Pricewatch gains no
+daemon of its own. Runs must not overlap. A run that finds another still open exits without
+selecting work, and the scheduled task also disallows parallel instances. Each run appends
+its report to a log file, since nobody reads its terminal. In phase 3 the same scheduler
+triggers the producer that queues the stalest cards, and the RabbitMQ consumer runs
+continuously.
+
+**Rationale:** DD-7 already makes a run a durable, resumable slice, so scheduling needs a
+trigger, not new machinery. RabbitMQ does not replace the scheduler. A broker moves,
+retries and dead-letters work, but something still has to decide when to look for it.
+Which cards are due stays a database question (DD-7, DD-8): one query, deterministic, and
+easy to inspect.
+
+**Guidance:**
+- Prices change at most daily, so re-checking a card more than once a day wastes budget.
+- Smaller, frequent runs spread the daily allowance best, for example hourly runs of about
+  40 requests against PokeWallet's 100 per hour and 1,000 per day.
+- The durable quota stops any excess regardless.
+
+**Phase 3 experiment, not a commitment:** broker-side rescheduling, where a priced card is
+republished with a TTL and dead-lettered back into the work queue when it is due, is a
+worthwhile RabbitMQ exercise and a natural fit for value weighting (FR-10a). If tried, its
+schedule is only a hint. A periodic sweep re-queues anything the database says is overdue,
+because a purged queue or a lost message would otherwise drop a card from rotation silently.
+
+### DD-10: The phase 4 dashboard is local and read-only
+
+**Decision:** phase 4 adds `pricewatch serve`, an HTTP server bound to `127.0.0.1` for the
+author only. It reads the existing database and never writes to it. It has no
+authentication, no API for other programs, no hosting, and no deployment. Its first views
+are:
+- collection value over time, with a pricing-coverage line;
+- biggest movers;
+- unresolved cards with their reasons.
+
+**Rationale:** value over time and its caveats are hard to present in a terminal.
+
+The caveats are:
+- runs are slices (DD-7), so on any day part of the total is days old;
+- during the first pass the total rises simply because coverage rises;
+- unpriced and excluded cards must be left out, or shown only as labelled export snapshots
+  (DD-6).
+
+A chart with a coverage line shows all of this honestly. It is also the next step in Go
+practice: `net/http` routing, `html/template` with `//go:embed`, graceful shutdown with
+`http.Server.Shutdown`, and server-sent events.
+
+**Relationship to phase 3:** the dashboard is built after phase 3 and becomes one more
+independent consumer of the price events (FR-12), pushing live updates to the browser with
+server-sent events. That doubles as a test that the event fan-out really is independent.
+
+**Prerequisite:** the "value as of day X" query, meaning each card's latest observation as
+of that day times its quantity, is built and table-tested before any view renders it.
+
 ## 9. Acceptance criteria, v1
 
 - [ ] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
@@ -300,11 +360,17 @@ expensive one. Checking valuable cards more often remains the phase 2 refinement
 
 **Phase 1, v1.** FR-1 through FR-8. Complete and useful on its own.
 
-**Phase 2, v1.1.** FR-9, FR-10, FR-10a. Retry with backoff, second source, value-weighted priority.
+**Phase 2, v1.1.** FR-9, FR-10, FR-10a, FR-14. Retry with backoff, second source,
+value-weighted priority, and unattended scheduled runs through the OS scheduler (DD-9).
 
 **Phase 3, v2.** FR-11 through FR-13. RabbitMQ job dispatch with dead-lettering, event fan-out
 to independent consumers, Discord notification. This is the phase that addresses the
-messaging gap.
+messaging gap. The phase 2 scheduler now triggers the producer, and the consumer runs
+continuously (DD-9).
+
+**Phase 4, v3 (future, not committed).** FR-15. A local, read-only dashboard served by
+`pricewatch serve` (DD-10). It opens section 4 only as far as DD-10 states, and starts only
+after phase 3, so it can consume the price events.
 
 Each phase leaves something complete.
 
@@ -326,13 +392,19 @@ Each phase leaves something complete.
 - **Whether to price by condition.** The export carries a condition column and conditions
   differ a lot in value. Simplest v1 is market price only, stated explicitly.
 - Whether graded pricing ever matters enough to justify Scrydex at $29/month.
+- **When the source's daily quota resets.** The quota table counts per UTC day and resyncs
+  from the source's headers, but PokeWallet does not document its reset time. Scheduled runs
+  (DD-9) make best use of each day if they start just after it.
+- **How missed scheduled runs behave.** Runs are durable slices, so skipping a missed run
+  loses only freshness. Decide in phase 2 whether the task catches up or skips.
 
 ## 12. Risks
 
 | Risk | Mitigation |
 |---|---|
 | Free API changes or disappears again | DD-1. The interface exists for exactly this |
-| Scope creep into a web UI or a product | Section 4. Non-goals are explicit |
+| Scope creep into a web UI or a product | Section 4. Non-goals are explicit. The only planned UI is phase 4's local, read-only dashboard, bounded by DD-10 and not started before phase 3 |
+| Overlapping scheduled runs price the same cards twice | DD-9. Runs refuse to start while another is open, and the scheduled task disallows parallel instances |
 | Phase 3 never happens | DD-2 keeps the cost of phase 3 low, and phase 1 stands on its own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
 | Variant mismatches produce silently wrong prices | DD-5. Treat ambiguous matches as failures, not guesses |
