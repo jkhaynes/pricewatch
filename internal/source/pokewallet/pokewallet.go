@@ -141,15 +141,25 @@ var ownPrint = map[string]bool{
 	"holo common":          true,
 }
 
+// aliases strips trailing qualifiers one at a time, as in
+// "Gardevoir & Sylveon GX (205) (Alternate Full Art)". Every one must be
+// allowed: a single qualifier marking a different print means no alias at all.
 func aliases(name string) []string {
-	m := trailingQualifier.FindStringSubmatch(name)
-	if m == nil {
+	base := name
+	for {
+		m := trailingQualifier.FindStringSubmatch(base)
+		if m == nil {
+			break
+		}
+		if q := strings.ToLower(m[2]); !digitsOnly.MatchString(q) && !ownPrint[q] {
+			return nil
+		}
+		base = m[1]
+	}
+	if base == name {
 		return nil
 	}
-	if q := strings.ToLower(m[2]); digitsOnly.MatchString(q) || ownPrint[q] {
-		return []string{m[1]}
-	}
-	return nil
+	return []string{base}
 }
 
 func (p *Provider) Quote(ctx context.Context, sourceCardID string, variants []card.Variant) ([]card.Quote, error) {

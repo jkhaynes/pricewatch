@@ -110,6 +110,10 @@ func TestCardsQualifierAliases(t *testing.T) {
 		{"Feraligatr - 213 (Illustration Contest 2024)", nil},
 		{"Glaceon ex - 026/131 (Holiday Calendar)", nil},
 		{"Magmar ex", nil},
+		// Several trailing qualifiers: strip them all, but only if every one is allowed.
+		{"Gardevoir & Sylveon GX (205) (Alternate Full Art)", []string{"Gardevoir & Sylveon GX"}},
+		{"Pikachu (Poke Ball Pattern) (Secret)", nil},
+		{"Pikachu (Secret) (Poke Ball Pattern)", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
