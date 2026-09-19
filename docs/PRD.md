@@ -343,6 +343,46 @@ server-sent events. That doubles as a test that the event fan-out really is inde
 **Prerequisite:** the "value as of day X" query, meaning each card's latest observation as
 of that day times its quantity, is built and table-tested before any view renders it.
 
+### DD-11: Pace against the server's own hourly count: burst, then wait out the window
+
+**Decision:** the shared HTTP client stops spacing requests evenly across the hour. When a
+source reports its hourly count in response headers (PokeWallet sends
+`X-RateLimit-Limit-Hour` and `X-RateLimit-Remaining-Hour`), the client:
+- **sends immediately while the server says requests remain this hour**, subject only to a
+  small politeness cap (PokeWallet: 2 per second);
+- **re-syncs its count from every response**, and reserves a request locally before sending,
+  so concurrent workers cannot overshoot between responses;
+- **when the server says none remain, waits until the window has certainly reset**: one hour
+  after the first request it saw in the current window. The first request of a window is the
+  one whose response shows `remaining = limit - 1`; failing that, it is the first request this
+  process made. The wait honours cancellation, so Ctrl-C still works while it waits;
+- **falls back to today's even spacing** for a source that sends no hourly headers.
+
+The daily quota is unchanged: it stays durable, in SQLite, and synced from headers. A 429
+still stops dispatch cleanly and defers the remaining cards. That is the backstop if the
+count is ever wrong.
+
+**Rationale:** the hourly cap binds either way, so throughput over any stretch longer than an
+hour is identical. What changes:
+- **Short runs finish in minutes instead of up to an hour.** A `--budget 5` run takes seconds
+  rather than about two and a half minutes.
+- **It suits scheduled runs (DD-9).** A run fires, spends its allowance, and exits, which
+  lowers the risk of overlap and of a sleeping laptop interrupting it.
+- **The worker pool now matters,** because requests are no longer serialised 36 seconds apart.
+
+The two reasons for the original even spacing are handled directly instead of by caution:
+- **The in-memory limiter forgot the hourly count on restart.** The server's own count is now
+  the source of truth.
+- **It is unknown whether the source counts a fixed clock hour or a rolling 60 minutes.**
+  Waiting a full hour after the window's first request is safe under both. After a restart,
+  the process's own first request is later than the real window start, so the wait can only
+  be longer than necessary, never shorter.
+
+**Consequence:** work beyond one hour's allowance now arrives in bursts, for example 100
+requests in about a minute, a pause of up to an hour, then the next burst, instead of a
+steady trickle. A 150-request import finishes about as late as before, but most of it is done
+in the first few minutes.
+
 ## 9. Acceptance criteria, v1
 
 - [ ] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
@@ -418,6 +458,7 @@ Each phase leaves something complete.
 | Free API changes or disappears again | DD-1. The interface exists for exactly this |
 | Scope creep into a web UI or a product | Section 4. Non-goals are explicit. The only planned UI is phase 4's local, read-only dashboard, bounded by DD-10 and not started before phase 3 |
 | Overlapping scheduled runs price the same cards twice | DD-9. Runs refuse to start while another is open, and the scheduled task disallows parallel instances |
+| Bursting overspends the hourly allowance, for example after a restart | DD-11. The server's own hourly count is the source of truth, requests are reserved before sending, and a 429 still stops dispatch cleanly |
 | Phase 3 never happens | DD-2 keeps the cost of phase 3 low, and phase 1 stands on its own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
 | Variant mismatches produce silently wrong prices | DD-5. Treat ambiguous matches as failures, not guesses |
