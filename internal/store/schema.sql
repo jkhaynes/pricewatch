@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS runs (
   started_at  TIMESTAMP NOT NULL,
   finished_at TIMESTAMP,
   ok_count    INTEGER NOT NULL DEFAULT 0,
-  error_count INTEGER NOT NULL DEFAULT 0
+  error_count INTEGER NOT NULL DEFAULT 0,
+  requests    INTEGER NOT NULL DEFAULT 0   -- added in phase 3; addColumn upgrades older files
 );
 
 CREATE TABLE IF NOT EXISTS observations (
@@ -58,4 +59,12 @@ CREATE TABLE IF NOT EXISTS quota (
   day    TEXT NOT NULL,               -- UTC date, "2026-09-18"
   used   INTEGER NOT NULL,
   PRIMARY KEY (source, day)
+);
+
+-- Card art for the status page (DD-14), one per source card.
+CREATE TABLE IF NOT EXISTS card_art (
+  source         TEXT NOT NULL,
+  source_card_id TEXT NOT NULL,
+  image_url      TEXT NOT NULL,
+  PRIMARY KEY (source, source_card_id)
 );

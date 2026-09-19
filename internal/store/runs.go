@@ -19,9 +19,9 @@ func (s *SQLite) StartRun(ctx context.Context) (int64, error) {
 	return res.LastInsertId()
 }
 
-func (s *SQLite) FinishRun(ctx context.Context, runID int64, ok, failed int) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE runs SET finished_at=?, ok_count=?, error_count=? WHERE id=?`,
-		time.Now().UTC(), ok, failed, runID)
+func (s *SQLite) FinishRun(ctx context.Context, runID int64, ok, failed, requests int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE runs SET finished_at=?, ok_count=?, error_count=?, requests=? WHERE id=?`,
+		time.Now().UTC(), ok, failed, requests, runID)
 	if err != nil {
 		return fmt.Errorf("finish run %d: %w", runID, err)
 	}

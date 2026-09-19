@@ -188,6 +188,7 @@ func aliases(name, number string) []string {
 func (p *Provider) Quote(ctx context.Context, sourceCardID string, variants []card.Variant) ([]card.Quote, error) {
 	var resp struct {
 		TCGPlayer *struct {
+			URL    string `json:"url"`
 			Prices []struct {
 				SubType string   `json:"sub_type_name"`
 				Low     *float64 `json:"low_price"`
@@ -205,5 +206,26 @@ func (p *Provider) Quote(ctx context.Context, sourceCardID string, variants []ca
 			available[pr.SubType] = card.Price{Market: pr.Market, Low: pr.Low, High: pr.High}
 		}
 	}
-	return source.Quotes(available, subtypes, variants), nil
+	quotes := source.Quotes(available, subtypes, variants)
+	if resp.TCGPlayer != nil {
+		img := artURL(resp.TCGPlayer.URL)
+		for i := range quotes {
+			quotes[i].Image = img
+		}
+	}
+	return quotes, nil
+}
+
+// productID finds TCGplayer's product number in a URL such as
+// https://www.tcgplayer.com/product/83475, with or without a slug after it.
+var productID = regexp.MustCompile(`/product/(\d+)`)
+
+// artURL is TCGplayer's image CDN address for the product (DD-14). It is an
+// unofficial address, so the status page falls back to a plain tile.
+func artURL(tcgplayerURL string) string {
+	m := productID.FindStringSubmatch(tcgplayerURL)
+	if m == nil {
+		return ""
+	}
+	return "https://tcgplayer-cdn.tcgplayer.com/product/" + m[1] + "_in_1000x1000.jpg"
 }

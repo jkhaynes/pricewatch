@@ -513,10 +513,21 @@ engineers and hiring managers who follow a link from the README. It replaces DD-
 dashboard. There is no local page.
 
 - **Built by the scheduled job.** After each run, the DD-13 workflow runs a new command,
-  `pricewatch site`, which writes the page and a data file of **derived numbers only**.
-- **Published to a separate public repo** served by GitHub Pages. The data repo's built-in
-  token cannot write to another repo, so the job uses a fine-grained token limited to writing
-  that one repo, stored as a second secret.
+  `pricewatch site`, which writes one self-contained `index.html` with its **derived numbers
+  only** embedded as JSON. One file opens straight from disk for a local preview, with no
+  server.
+- **Published to the public repo `jkhaynes/pricewatch-site`** (decided 2026-09-19), served by
+  GitHub Pages at `jkhaynes.github.io/pricewatch-site`. The data repo's built-in token cannot
+  write to another repo, so the job uses a fine-grained token that can write only that repo,
+  stored as the `SITE_TOKEN` secret. Serving from the code repo's `gh-pages` branch was
+  rejected because the token would then be able to push code.
+- **Look (decided 2026-09-19):** dark only, on a plum-black ground, with a dusty rose accent
+  for identity and emphasis. Status always uses the same three pastel colours: green for
+  good (price rises, just checked, budget under 75%), yellow for warning (coming due, budget
+  75 to 95%), and red for bad (price falls, overdue, budget over 95%). Never priced is
+  lavender; unresolved is plum-grey hatching. The spotlight card has a slow holo-foil frame,
+  which stops for readers who prefer reduced motion. Full-page mockup:
+  https://claude.ai/artifact/1NJbmmVogMXg4PPFxtELqN
 - **Never published:** the database, the export, or anything a reader could turn back into
   them.
 - **Real data, totals hidden.** The page shows the author's actual collection; sharing a

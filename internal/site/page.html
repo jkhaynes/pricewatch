@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pricewatch status</title>
+<meta name="description" content="A Go CLI pricing a Pokémon card collection on 1,000 API requests a day, every hour on GitHub Actions.">
+<meta property="og:title" content="pricewatch status">
+<meta property="og:description" content="Live price movement, scheduling and the cards it refuses to guess.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=JetBrains+Mono:wght@400;600&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #140C13;
+  --surface: #1E131D;
+  --ink: #EDE1E7;
+  --muted: #BC9DAE;
+  --faint: #7F6475;
+  --line: #33222E;
+  --accent: #D08BA8;
+  --accent-soft: #2C1A24;
+  --good: #8CC7A1;
+  --warn: #E3D08C;
+  --bad: #E28E8E;
+  --fresh: var(--good);
+  --due: var(--warn);
+  --late: var(--bad);
+  --new: #9A8CCB;
+  --unres: #4D3645;
+  --up: var(--good);
+  --down: var(--bad);
+  --bar: #4D3645;
+  --bar-now: #D08BA8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 0 64px; }
+h1, h2, h3 { font-family: "Archivo", "Arial Narrow", system-ui, sans-serif; margin: 0; text-wrap: balance; }
+h2 { font-size: 22px; font-weight: 800; font-stretch: 90%; }
+p { margin: 0; max-width: 66ch; }
+[hidden] { display: none !important; }
+.num { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.eyebrow { font: 600 11.5px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.empty { color: var(--muted); font-size: 14px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 8px; }
+.chip { display: inline-block; font: 600 10.5px/1 "JetBrains Mono", monospace; letter-spacing: .03em; padding: 4px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; vertical-align: 1px; }
+.chg { font: 600 13.5px/1 "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chg.up { color: var(--up); }
+.chg.down { color: var(--down); }
+
+header.top { display: grid; gap: 14px; padding-block: 34px 28px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 24px; }
+.wordmark { font: 800 34px/1 "Archivo", system-ui, sans-serif; font-stretch: 80%; letter-spacing: -0.01em; }
+.wordmark span { color: var(--accent); }
+.pitch { font-size: 17px; color: var(--muted); max-width: 60ch; }
+.pitch b { color: var(--ink); font-weight: 600; }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13.5px; color: var(--muted); }
+.status .live { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 600; }
+.status .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 25%, transparent); }
+.dots { display: inline-flex; gap: 3px; align-items: center; }
+.dots i { width: 8px; height: 14px; border-radius: 2px; background: var(--up); display: block; }
+.dots i.miss { background: transparent; outline: 1px dashed var(--faint); outline-offset: -1px; }
+
+section { display: grid; gap: 18px; padding-block: 40px; border-bottom: 1px solid var(--line); }
+section:last-of-type { border-bottom: 0; }
+.sec-head { display: grid; gap: 6px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.stat { display: grid; gap: 6px; align-content: start; }
+.stat .big { font: 800 44px/1 "Archivo", system-ui, sans-serif; font-stretch: 85%; font-variant-numeric: tabular-nums; }
+.stat .big.up { color: var(--up); }
+.stat .big.down { color: var(--down); }
+.stat .sub { font-size: 13.5px; color: var(--muted); }
+.cov { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: flex; }
+.cov i { display: block; height: 100%; background: var(--accent); }
+
+.spot { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 26px; align-items: start; }
+.holo { position: relative; border-radius: 10px; padding: 3px; background: conic-gradient(from var(--a, 0deg), #B97892, #D9B3C3, #9D8FC0, #CFAF95, #C58BA4, #B97892); animation: spin 9s linear infinite; }
+@property --a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes spin { to { --a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .holo { animation: none; } }
+.art { position: relative; aspect-ratio: 63 / 88; width: 100%; max-width: 100%; border-radius: 8px; overflow: hidden; display: grid; align-content: space-between; padding: 10px; color: #fff; background: linear-gradient(160deg, var(--c1), var(--c2)); }
+.art .an { font: 700 14px/1.15 "Archivo", system-ui, sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.art .ano { font: 600 10.5px/1 "JetBrains Mono", monospace; opacity: .9; }
+.art::after { content: ""; position: absolute; inset: 22% 10% 30%; border-radius: 4px; background: rgba(255,255,255,.16); }
+.cardimg { display: block; width: 100%; max-width: 100%; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 8px; background: var(--surface); }
+.spot-main { display: grid; gap: 10px; }
+.spot-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.spot-name h3 { font-size: 24px; font-weight: 800; font-stretch: 90%; }
+.spot-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.spot-price .big { font: 800 34px/1 "Archivo", system-ui, sans-serif; font-stretch: 85%; font-variant-numeric: tabular-nums; }
+.spot-price .chg { font-size: 16px; }
+.lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 32px; }
+.mlist { display: grid; align-content: start; }
+.mlist .eyebrow { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.mrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.mrow .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.mrow .who b { font-weight: 600; }
+.mrow .px { display: flex; gap: 12px; align-items: baseline; }
+.mrow .px .num { color: var(--muted); font-size: 12.5px; }
+.today { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.today-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.tcell { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--bg); font-size: 13.5px; }
+.tcell b { font-weight: 600; line-height: 1.25; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; color: var(--muted); }
+.legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; }
+.legend .grad { display: inline-block; width: 90px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; background: linear-gradient(90deg, var(--fresh), var(--due)); }
+.legend .hatch { background: repeating-linear-gradient(135deg, var(--unres) 0 2px, transparent 2px 4px); outline: 1px solid var(--unres); }
+.viz { position: relative; width: 100%; }
+.viz canvas { display: block; width: 100%; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; line-height: 1.4; padding: 7px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; }
+
+.budget { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 32px; align-items: end; }
+.gauge { display: grid; gap: 10px; }
+.gauge .big { font: 800 44px/1 "Archivo", system-ui, sans-serif; font-stretch: 85%; font-variant-numeric: tabular-nums; }
+.gauge .big small { font-size: 20px; color: var(--muted); font-weight: 700; }
+.gbar { height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.gbar i { display: block; height: 100%; background: var(--good); border-radius: 6px; }
+.gbar.warn i { background: var(--warn); }
+.gbar.bad i { background: var(--bad); }
+@media (max-width: 680px) { .budget, .spot { grid-template-columns: 1fr; } .spot .holo { max-width: 220px; } }
+
+.groups { display: grid; gap: 10px; }
+.grp { display: grid; grid-template-columns: minmax(150px, 260px) 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
+.grp .bar { height: 10px; border-radius: 5px; background: repeating-linear-gradient(135deg, var(--unres) 0 3px, transparent 3px 6px); outline: 1px solid var(--unres); outline-offset: -1px; }
+.grp .n { font: 600 13px/1 "JetBrains Mono", monospace; color: var(--muted); min-width: 4ch; text-align: right; }
+.grp .lbl b { font-weight: 600; display: block; }
+.grp .lbl span { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 560px) { .grp { grid-template-columns: 1fr auto; } .grp .bar { grid-column: 1 / -1; grid-row: 2; } }
+.callout { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.pair { display: flex; gap: 8px; }
+.pair .art { width: 62px; padding: 5px; border-radius: 5px; }
+.pair .art .an { font-size: 9px; }
+.pair .art .ano { font-size: 8px; }
+.callout p { font-size: 14.5px; }
+@media (max-width: 520px) { .callout { grid-template-columns: 1fr; } }
+
+footer { display: grid; gap: 18px; padding-block: 36px 0; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; }
+.flow span { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.flow i { color: var(--faint); font-style: normal; }
+footer .links { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="wordmark">price<span>watch</span></span>
+      <div class="status">
+        <span class="live" id="updated"></span>
+        <span class="num" id="next"></span>
+        <span class="dots" id="dots" aria-label="Hourly runs over the last 24 hours"></span>
+      </div>
+    </div>
+    <p class="pitch">A Go CLI that prices a <b id="pitch-cards"></b> Pokémon collection on a free API budget of <b>1,000 requests a day</b>. It runs every hour on GitHub Actions and never guesses which print a card is.</p>
+  </header>
+
+  <section aria-labelledby="h-headline">
+    <div class="sec-head"><span class="eyebrow" id="h-headline">This week</span></div>
+    <div class="stats">
+      <div class="stat">
+        <span class="eyebrow">Price index · 7 days</span>
+        <span class="big" id="idx-week"></span>
+        <span class="sub" id="idx-week-sub">Only cards priced at both ends of the week, so new prices can't inflate it.</span>
+      </div>
+      <div class="stat">
+        <span class="eyebrow">Price index · 30 days</span>
+        <span class="big" id="idx-month"></span>
+        <span class="sub" id="idx-month-sub">Same rule over a month.</span>
+      </div>
+      <div class="stat">
+        <span class="eyebrow">Coverage</span>
+        <span class="big" id="cov-pct"></span>
+        <div class="cov" aria-hidden="true"><i id="cov-bar"></i></div>
+        <span class="sub" id="cov-sub"></span>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-movers">
+    <div class="sec-head">
+      <span class="eyebrow">Movers · 7 days</span>
+      <h2 id="h-movers">Biggest price moves</h2>
+    </div>
+    <p class="empty" id="movers-empty" hidden>Movers appear once cards have a week of history.</p>
+    <div class="spot" id="spot"></div>
+    <div class="lists" id="lists"></div>
+    <div class="today">
+      <div class="sec-head"><span class="eyebrow">Today · $100+ cards, checked daily</span></div>
+      <div class="today-row" id="today"></div>
+      <p class="muted" id="today-empty" hidden>Moves appear here once $100+ cards have been checked twice.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-fresh">
+    <div class="sec-head">
+      <span class="eyebrow">How it chooses what to check</span>
+      <h2 id="h-fresh">Every card, and how close it is to its next check</h2>
+      <p class="muted">Pricier cards are checked more often. One tile is one API request. Hover over a tile for details.</p>
+      <div class="legend">
+        <span><span class="grad"></span>just checked → due</span>
+        <span><span class="sw" style="background:var(--late)"></span>overdue</span>
+        <span><span class="sw" style="background:var(--new)"></span>never priced</span>
+        <span><span class="sw hatch"></span>can't be priced (see below)</span>
+      </div>
+    </div>
+    <div class="viz"><canvas id="map" role="img" aria-label="Freshness map in bands by value tier"></canvas><div class="tip" id="tip" hidden></div></div>
+  </section>
+
+  <section aria-labelledby="h-budget">
+    <div class="sec-head">
+      <span class="eyebrow">The budget</span>
+      <h2 id="h-budget">1,000 requests a day, spent where they matter</h2>
+    </div>
+    <div class="budget">
+      <div class="gauge">
+        <span class="eyebrow">Used today (UTC)</span>
+        <span class="big" id="used"></span>
+        <div class="gbar" id="gbar" aria-hidden="true"><i id="gbar-fill"></i></div>
+        <span class="muted" style="font-size:13.5px" id="reset"></span>
+      </div>
+      <div class="viz"><canvas id="hours" role="img" aria-label="Requests per hour over the last 24 hours"></canvas></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-guess">
+    <div class="sec-head">
+      <span class="eyebrow">What it refuses to guess</span>
+      <h2 id="h-guess"></h2>
+      <p class="muted">A wrong match fails silently, so an uncertain one is reported instead.</p>
+    </div>
+    <div class="callout">
+      <div class="pair">
+        <div class="art" style="--c1:#2E5A1F;--c2:#8FCB5A"><span class="an">Tropius</span><span class="ano">Normal</span></div>
+        <div class="art" style="--c1:#1F4A5A;--c2:#7FD0E0"><span class="an">Tropius</span><span class="ano">Rev. Holo</span></div>
+      </div>
+      <p><b>Same card number, two prices.</b> Tropius 001/084 is <span class="num">$0.06</span> as a Normal print and <span class="num">$0.20</span> as a Reverse Holo. On chase cards the gap between prints dwarfs any price movement, so a card whose print can't be pinned down is left out rather than priced as the wrong one.</p>
+    </div>
+    <div class="groups" id="groups"></div>
+  </section>
+
+  <footer>
+    <div class="flow" aria-label="How it works">
+      <span>GitHub Actions, hourly</span><i>→</i><span>PokéWallet API</span><i>→</i><span>SQLite, private repo</span><i>→</i><span>this page</span>
+    </div>
+    <div class="links">
+      <a href="https://github.com/jkhaynes/pricewatch">Source on GitHub</a>
+      <span class="muted">Built in Go by jkhaynes · prices from TCGplayer via PokéWallet</span>
+    </div>
+  </footer>
+</div>
+
+<script id="data" type="application/json">{{DATA}}</script>
+<script>
+(function () {
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var HOUR = 36e5, DAY = 864e5, NOW = Date.now();
+  function byId(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function hexRgb(h) { h = h.replace('#', ''); return [0, 2, 4].map(function (i) { return parseInt(h.substr(i, 2), 16); }); }
+  function mix(a, b, t) { return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(a[i] + (b[i] - a[i]) * t); }).join(',') + ')'; }
+  function setup(canvas, height) {
+    var w = canvas.parentElement.clientWidth, dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(height * dpr); canvas.style.height = height + 'px';
+    var ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx: ctx, w: w };
+  }
+  function n(v) { return v.toLocaleString('en-US'); }
+  function money(v) { return v < 10 ? '$' + v.toFixed(2) : '$' + n(Math.round(v)); }
+  function pctText(p) { return (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1) + '%'; }
+  function chg(p) { return '<span class="chg ' + (p >= 0 ? 'up' : 'down') + '">' + pctText(p) + '</span>'; }
+  function span(ms) { var m = Math.max(0, Math.round(ms / 6e4)); return m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' days'; }
+
+  // ---------- Header ----------
+  var next = new Date(NOW); next.setUTCMinutes(D.runMinute, 0, 0);
+  if (next.getTime() <= NOW) next = new Date(next.getTime() + HOUR);
+  byId('updated').textContent = 'Updated ' + span(NOW - new Date(D.generatedAt).getTime()) + ' ago';
+  byId('next').textContent = 'next run in ' + span(next.getTime() - NOW);
+  byId('dots').innerHTML = (D.runs || []).map(function (ran, i) {
+    return '<i class="' + (ran ? '' : 'miss') + '" title="' + (24 - i) + 'h ago · ' + (ran ? 'ran' : 'no run recorded') + '"></i>';
+  }).join('');
+  byId('pitch-cards').textContent = n(D.coverage.total) + '-card';
+
+  // ---------- Headline ----------
+  function indexStat(id, v) {
+    var el = byId(id);
+    if (v === null || v === undefined) { el.textContent = '—'; byId(id + '-sub').textContent = 'Needs more history: no card has been priced long enough ago.'; return; }
+    el.textContent = pctText(v); el.className = 'big ' + (v >= 0 ? 'up' : 'down');
+  }
+  indexStat('idx-week', D.index.week);
+  indexStat('idx-month', D.index.month);
+  var share = D.coverage.total ? D.coverage.priced / D.coverage.total : 0;
+  byId('cov-pct').textContent = Math.round(share * 100) + '%';
+  byId('cov-bar').style.width = (share * 100).toFixed(1) + '%';
+  byId('cov-sub').textContent = n(D.coverage.priced) + ' of ' + n(D.coverage.total) + ' cards priced · ' + Math.round(D.coverage.valueShare * 100) + "% of the collection's value";
+
+  // ---------- Movers ----------
+  var TINTS = [['#3B2A4A', '#8C6A9E'], ['#2F3E4A', '#6F8FA6'], ['#4A2E3A', '#A06A82'], ['#2E4A3E', '#6FA08A'], ['#4A3F2E', '#A08A6A']];
+  function tile(m) {
+    var h = 0; for (var i = 0; i < m.name.length; i++) h = (h * 31 + m.name.charCodeAt(i)) >>> 0;
+    var t = TINTS[h % TINTS.length], el = document.createElement('div');
+    el.className = 'art'; el.style.setProperty('--c1', t[0]); el.style.setProperty('--c2', t[1]);
+    el.innerHTML = '<span class="an">' + esc(m.name) + '</span><span class="ano">' + esc(m.number) + '</span>';
+    return el;
+  }
+  function art(m) {
+    if (!m.image) return tile(m);
+    var img = document.createElement('img');
+    img.className = 'cardimg'; img.alt = m.name + ' ' + m.number; img.src = m.image;
+    img.onerror = function () { img.replaceWith(tile(m)); }; // the CDN address is unofficial (DD-14)
+    return img;
+  }
+  function chart(points, up) {
+    var w = 480, h = 160, L = 50, R = 10, T = 10, B = 24, colour = up ? 'var(--up)' : 'var(--down)';
+    var ts = points.map(function (p) { return new Date(p.at).getTime(); }), ps = points.map(function (p) { return p.price; });
+    var t0 = Math.min.apply(null, ts), t1 = Math.max.apply(null, ts);
+    var lo = Math.min.apply(null, ps) * 0.99, hi = Math.max.apply(null, ps) * 1.01;
+    function X(t) { return t1 === t0 ? (L + w - R) / 2 : L + (t - t0) / (t1 - t0) * (w - L - R); }
+    function Y(v) { return T + (1 - (v - lo) / (hi - lo)) * (h - T - B); }
+    var pts = points.map(function (p, i) { return [X(ts[i]), Y(p.price)]; }), last = pts.length - 1;
+    var grid = [lo, (lo + hi) / 2, hi].map(function (v) {
+      return '<line x1="' + L + '" x2="' + (w - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="var(--line)"/><text x="' + (L - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end" font-size="10.5" font-family="JetBrains Mono, monospace" fill="var(--muted)">' + money(v) + '</text>';
+    }).join('');
+    var area = 'M' + pts[0][0] + ',' + (h - B) + ' L' + pts.map(function (p) { return p.join(','); }).join(' L') + ' L' + pts[last][0] + ',' + (h - B) + ' Z';
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-width:' + w + 'px" role="img" aria-label="Price history, one dot per check">' + grid +
+      '<path d="' + area + '" fill="' + colour + '" fill-opacity="0.10"/><polyline fill="none" stroke="' + colour + '" stroke-width="2" points="' + pts.map(function (p) { return p.join(','); }).join(' ') + '"/>' +
+      pts.map(function (p, i) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (i === last ? 4 : 2.6) + '" fill="' + colour + '" stroke="var(--surface)" stroke-width="1.5"/>'; }).join('') +
+      '<text x="' + L + '" y="' + (h - 6) + '" font-size="10.5" font-family="JetBrains Mono, monospace" fill="var(--muted)">' + span(NOW - t0) + ' ago</text>' +
+      '<text x="' + (w - R) + '" y="' + (h - 6) + '" text-anchor="end" font-size="10.5" font-family="JetBrains Mono, monospace" fill="var(--muted)">latest</text></svg>';
+  }
+  function rows(list, none) {
+    if (!list || !list.length) return '<div class="mrow"><span class="muted">' + none + '</span></div>';
+    return list.map(function (m) {
+      return '<div class="mrow"><span class="who"><b>' + esc(m.name) + '</b><span class="chip">' + esc(m.variant) + '</span></span><span class="px"><span class="num">' + money(m.was) + ' → ' + money(m.now) + '</span>' + chg(m.percent) + '</span></div>';
+    }).join('');
+  }
+  var S = D.spotlight;
+  if (!S) {
+    byId('movers-empty').hidden = false; byId('spot').hidden = true; byId('lists').hidden = true;
+  } else {
+    var frame = document.createElement('div'); frame.className = 'holo'; frame.appendChild(art(S));
+    var main = document.createElement('div'); main.className = 'spot-main';
+    main.innerHTML = '<span class="eyebrow">Biggest move this week</span>' +
+      '<div class="spot-name"><h3>' + esc(S.name) + '</h3><span class="chip">' + esc(S.variant) + '</span><span class="muted">' + esc(S.set) + ' · ' + esc(S.number) + '</span></div>' +
+      '<div class="spot-price"><span class="big">' + money(S.now) + '</span>' + chg(S.percent) + '<span class="muted num">from ' + money(S.was) + '</span></div>' +
+      (S.history && S.history.length > 1 ? chart(S.history, S.percent >= 0) : '') +
+      '<span class="muted" style="font-size:13px">Each dot is one check. Cards worth $100+ are checked daily; a $3 card shows one dot a week.</span>';
+    byId('spot').appendChild(frame); byId('spot').appendChild(main);
+    byId('lists').innerHTML = '<div class="mlist"><span class="eyebrow">Also rising</span>' + rows(D.rising, 'No other rises this week.') + '</div>' +
+      '<div class="mlist"><span class="eyebrow">Falling</span>' + rows(D.falling, 'Nothing fell this week.') + '</div>';
+  }
+  if (!D.today || !D.today.length) byId('today-empty').hidden = false;
+  byId('today').innerHTML = (D.today || []).map(function (m) {
+    return '<div class="tcell"><b>' + esc(m.name) + '</b><span><span class="chip">' + esc(m.variant) + '</span></span><span>' + chg(m.percent) + ' <span class="num muted" style="font-size:12px">' + money(m.was) + ' → ' + money(m.now) + '</span></span></div>';
+  }).join('');
+
+  // ---------- Freshness map ----------
+  var bands = (D.bands || []).map(function (b) {
+    return { label: b.label + ' · checked every ' + (b.everyDays === 1 ? 'day' : b.everyDays + ' days'), meta: n(b.tiles ? b.tiles.length : 0) + ' cards · ' + n(b.due) + ' due now', list: b.tiles || [], every: b.everyDays };
+  });
+  bands.push({ label: "Can't be priced", meta: n(D.unresolvedTotal) + ' cards · reasons below', list: null, count: D.unresolvedTotal });
+  var hit = null;
+  function drawMap() {
+    var canvas = byId('map'), w = canvas.parentElement.clientWidth;
+    var p = { fresh: hexRgb(css('--fresh')), due: hexRgb(css('--due')), late: css('--late'), neu: css('--new'), unres: css('--unres'), ink: css('--ink'), muted: css('--muted') };
+    var cell = w < 520 ? 6 : 8, size = cell - 1, cols = Math.max(20, Math.floor(w / cell)), labelH = 24, gap = 16, h = 0;
+    bands.forEach(function (b) { b.rows = Math.ceil((b.list ? b.list.length : b.count) / cols); h += labelH + b.rows * cell + gap; });
+    var ctx = setup(canvas, h).ctx, y = 0;
+    var pc = document.createElement('canvas'); pc.width = pc.height = 4;
+    var px = pc.getContext('2d'); px.strokeStyle = p.unres; px.lineWidth = 1.2; px.beginPath(); px.moveTo(0, 4); px.lineTo(4, 0); px.stroke();
+    var pat = ctx.createPattern(pc, 'repeat');
+    hit = { cell: cell, cols: cols, bands: [] };
+    bands.forEach(function (b) {
+      ctx.fillStyle = p.ink; ctx.font = '600 13px "Public Sans", system-ui, sans-serif'; ctx.fillText(b.label, 0, y + 15);
+      var lw = ctx.measureText(b.label).width;
+      ctx.fillStyle = p.muted; ctx.font = '12px "JetBrains Mono", monospace'; ctx.fillText('   ' + b.meta, lw, y + 15);
+      y += labelH; hit.bands.push({ top: y, rows: b.rows, list: b.list, every: b.every });
+      var count = b.list ? b.list.length : b.count;
+      for (var i = 0; i < count; i++) {
+        var cx = (i % cols) * cell, cy = y + Math.floor(i / cols) * cell;
+        if (b.list) {
+          var r = b.list[i].r;
+          ctx.fillStyle = r === null ? p.neu : r > 1 ? p.late : mix(p.fresh, p.due, r);
+        } else ctx.fillStyle = pat;
+        ctx.fillRect(cx, cy, size, size);
+      }
+      y += b.rows * cell + gap;
+    });
+  }
+  function describe(t, every) {
+    var head = t.n + ' · ' + t.s + ' ' + t.no;
+    if (t.r === null) return head + ' · never priced, first in line';
+    var hrs = every * 24, ago = t.r * hrs * HOUR, left = (1 - t.r) * hrs * HOUR;
+    return head + ' · checked ' + span(ago) + ' ago · ' + (left < 0 ? 'overdue ' + span(-left) : 'next in ' + span(left));
+  }
+  (function () {
+    var canvas = byId('map'), tip = byId('tip');
+    canvas.addEventListener('mousemove', function (e) {
+      if (!hit) return;
+      var r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, col = Math.floor(x / hit.cell), found = null, every = 0;
+      hit.bands.forEach(function (b) {
+        if (!b.list || y < b.top || y >= b.top + b.rows * hit.cell) return;
+        var i = Math.floor((y - b.top) / hit.cell) * hit.cols + col;
+        if (col < hit.cols && i < b.list.length) { found = b.list[i]; every = b.every; }
+      });
+      if (!found) { tip.hidden = true; return; }
+      tip.textContent = describe(found, every);
+      tip.style.left = Math.min(Math.max(x, 150), r.width - 150) + 'px'; tip.style.top = y + 'px'; tip.hidden = false;
+    });
+    canvas.addEventListener('mouseleave', function () { tip.hidden = true; });
+  })();
+
+  // ---------- Budget ----------
+  var B = D.budget, usedShare = B.limit ? B.used / B.limit : 0;
+  byId('used').innerHTML = n(B.used) + ' <small>/ ' + n(B.limit) + '</small>';
+  byId('gbar-fill').style.width = Math.min(100, usedShare * 100).toFixed(1) + '%';
+  byId('gbar').className = 'gbar' + (usedShare > 0.95 ? ' bad' : usedShare >= 0.75 ? ' warn' : '');
+  var midnight = new Date(NOW); midnight.setUTCHours(24, 0, 0, 0);
+  byId('reset').textContent = 'Resets at midnight UTC, in ' + span(midnight.getTime() - NOW) + '. Runs stop early when nothing is due, so unused requests are simply not spent.';
+  function drawHours() {
+    var per = B.perHour || [], canvas = byId('hours'), H = 170, s = setup(canvas, H), ctx = s.ctx, w = s.w;
+    var L = 30, R = 4, T = 12, Bm = 22, pw = w - L - R, ph = H - T - Bm, max = Math.max(100, Math.max.apply(null, per.concat([0])));
+    var bar = css('--bar'), now = css('--bar-now'), line = css('--line'), muted = css('--muted'), late = css('--late');
+    function Y(v) { return T + (1 - v / max) * ph; }
+    ctx.font = '10.5px "JetBrains Mono", monospace'; ctx.fillStyle = muted; ctx.textAlign = 'right';
+    [0, 50, 100].forEach(function (v) { ctx.fillText(v, L - 6, Y(v) + 3); ctx.strokeStyle = line; ctx.beginPath(); ctx.moveTo(L, Y(v) + 0.5); ctx.lineTo(L + pw, Y(v) + 0.5); ctx.stroke(); });
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = late; ctx.beginPath(); ctx.moveTo(L, Y(100) + 0.5); ctx.lineTo(L + pw, Y(100) + 0.5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.textAlign = 'left'; ctx.fillStyle = late; ctx.fillText('hourly limit 100', L + 4, Y(100) + 12);
+    var bw = pw / 24;
+    per.forEach(function (v, i) { var hh = v / max * ph; ctx.fillStyle = i === per.length - 1 ? now : bar; ctx.fillRect(L + i * bw + 2, T + ph - hh, Math.max(1, bw - 4), hh); });
+    ctx.fillStyle = muted; ctx.textAlign = 'center';
+    ctx.fillText('24h ago', L + bw * 1.5, H - 6); ctx.fillText('12h ago', L + bw * 12, H - 6); ctx.fillText('this hour', L + pw - bw, H - 6);
+    ctx.textAlign = 'start';
+  }
+
+  // ---------- Unresolved ----------
+  byId('h-guess').textContent = n(D.unresolvedTotal) + " cards it won't price, and why";
+  var groups = D.unresolved || [], gmax = groups.length ? groups[0].count : 1;
+  byId('groups').innerHTML = groups.map(function (g) {
+    return '<div class="grp"><span class="lbl"><b>' + esc(g.label) + '</b><span>' + esc(g.hint) + '</span></span><span class="bar" style="width:' + Math.max(1, g.count / gmax * 100) + '%"></span><span class="n">' + n(g.count) + '</span></div>';
+  }).join('');
+
+  function drawAll() { drawMap(); drawHours(); }
+  drawAll();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
+  var raf = 0;
+  function redraw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawAll); }
+  if (window.ResizeObserver) new ResizeObserver(redraw).observe(document.querySelector('.wrap')); else window.addEventListener('resize', redraw);
+})();
+</script>
+</body>
+</html>

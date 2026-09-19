@@ -98,16 +98,16 @@ func TestFinishRunRecordsCounts(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	r, _ := s.StartRun(ctx)
-	if err := s.FinishRun(ctx, r, 7, 2); err != nil {
+	if err := s.FinishRun(ctx, r, 7, 2, 5); err != nil {
 		t.Fatal(err)
 	}
-	var ok, failed int
+	var ok, failed, requests int
 	var finished *time.Time
-	if err := s.db.QueryRowContext(ctx, `SELECT ok_count, error_count, finished_at FROM runs WHERE id=?`, r).Scan(&ok, &failed, &finished); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT ok_count, error_count, requests, finished_at FROM runs WHERE id=?`, r).Scan(&ok, &failed, &requests, &finished); err != nil {
 		t.Fatal(err)
 	}
-	if ok != 7 || failed != 2 || finished == nil {
-		t.Errorf("ok=%d failed=%d finished=%v", ok, failed, finished)
+	if ok != 7 || failed != 2 || requests != 5 || finished == nil {
+		t.Errorf("ok=%d failed=%d requests=%d finished=%v", ok, failed, requests, finished)
 	}
 }
 
@@ -244,5 +244,23 @@ func TestCandidatesAreFastAtCollectionScale(t *testing.T) {
 	got, err := s.Candidates(ctx, "pw")
 	if err != nil || len(got) != n/2 {
 		t.Fatalf("Candidates = %d, %v; want %d candidates within 3 s", len(got), err, n/2)
+	}
+}
+
+func TestPutArtUpserts(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	for _, url := range []string{"https://img/old.jpg", "https://img/new.jpg"} {
+		if err := s.PutArt(ctx, "pw", "pk_A", url); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got string
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT image_url, COUNT(*) FROM card_art WHERE source='pw' AND source_card_id='pk_A'`).Scan(&got, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || got != "https://img/new.jpg" {
+		t.Errorf("card_art = %q (%d rows), want the latest URL in one row", got, n)
 	}
 }

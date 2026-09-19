@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -163,5 +164,46 @@ func TestClosedDatabaseFileAloneIsComplete(t *testing.T) {
 	defer c.Close()
 	if _, ok, err := c.Mapping(t.Context(), "pw", "k"); err != nil || !ok {
 		t.Errorf("mapping missing from the copied file: ok=%v err=%v", ok, err)
+	}
+}
+
+// The cloud database was created by phase 1's schema, before runs had a
+// requests column. Opening it must add the column and keep the old rows.
+func TestOpenAddsRequestsToAnOlderRunsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	old, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE runs (id INTEGER PRIMARY KEY, started_at TIMESTAMP NOT NULL, finished_at TIMESTAMP,
+			ok_count INTEGER NOT NULL DEFAULT 0, error_count INTEGER NOT NULL DEFAULT 0)`,
+		`INSERT INTO runs (started_at) VALUES ('2026-09-19 10:07:00')`,
+	} {
+		if _, err := old.ExecContext(t.Context(), stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	s, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	id, err := s.StartRun(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishRun(t.Context(), id, 1, 0, 3); err != nil {
+		t.Fatal(err)
+	}
+	var oldReq, newReq int
+	if err := s.db.QueryRowContext(t.Context(), `SELECT
+		(SELECT requests FROM runs WHERE id = 1), (SELECT requests FROM runs WHERE id = ?)`, id).Scan(&oldReq, &newReq); err != nil {
+		t.Fatal(err)
+	}
+	if oldReq != 0 || newReq != 3 {
+		t.Errorf("requests = %d (old run), %d (new run); want 0 and 3", oldReq, newReq)
 	}
 }

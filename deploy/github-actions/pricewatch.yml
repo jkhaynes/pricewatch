@@ -83,3 +83,20 @@ jobs:
           git add -f pricewatch.db
           git commit -qm "$COMMAND at $(date -u +%FT%TZ), run ${{ github.run_id }}"
           git push -fq origin HEAD:db
+
+      # The status page (DD-14): derived numbers only, never the database.
+      - name: Build the status page
+        run: ./pricewatch site --db pricewatch.db --out site
+
+      # One force-pushed commit, like the db branch. SITE_TOKEN is a
+      # fine-grained token that can write only to pricewatch-site.
+      - name: Publish the status page
+        env:
+          SITE_TOKEN: ${{ secrets.SITE_TOKEN }}
+        run: |
+          cd site
+          git init -q -b main
+          git add index.html
+          git -c user.name=pricewatch -c user.email=pricewatch@users.noreply.github.com \
+            commit -qm "status at $(date -u +%FT%TZ), run ${{ github.run_id }}"
+          git push -fq "https://x-access-token:${SITE_TOKEN}@github.com/jkhaynes/pricewatch-site.git" main

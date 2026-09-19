@@ -25,7 +25,10 @@ type memStore struct {
 	mappings []card.Mapping
 	finished bool
 	ok, fail int
+	requests int
 	saveErr  error
+	art      map[string]string // source card ID -> image URL
+	artCalls int
 }
 
 func (m *memStore) StartRun(ctx context.Context) (int64, error) { return 1, ctx.Err() }
@@ -60,8 +63,8 @@ func (m *memStore) PutMapping(ctx context.Context, mp card.Mapping) error {
 	m.mappings = append(m.mappings, mp)
 	return ctx.Err()
 }
-func (m *memStore) FinishRun(ctx context.Context, _ int64, ok, failed int) error {
-	m.finished, m.ok, m.fail = true, ok, failed
+func (m *memStore) FinishRun(ctx context.Context, _ int64, ok, failed, requests int) error {
+	m.finished, m.ok, m.fail, m.requests = true, ok, failed, requests
 	return ctx.Err()
 }
 func (m *memStore) Changes(ctx context.Context, _ int64) ([]card.Change, error) {
@@ -78,6 +81,7 @@ type scriptSource struct {
 	requestErr map[string]error
 	variantErr map[string]error // key "<sourceID>/<variant>"
 	short      map[string]bool  // return one quote too few
+	image      string           // set on every quote
 	calls      atomic.Int32
 }
 
@@ -89,7 +93,7 @@ func (s *scriptSource) Quote(ctx context.Context, id string, variants []card.Var
 	m := 1.0
 	var qs []card.Quote
 	for _, v := range variants {
-		q := card.Quote{Variant: v, Price: card.Price{Market: &m}}
+		q := card.Quote{Variant: v, Price: card.Price{Market: &m}, Image: s.image}
 		if err := s.variantErr[id+"/"+string(v)]; err != nil {
 			q = card.Quote{Variant: v, Err: fmt.Errorf("%s: %w", v, err)}
 		}
@@ -161,8 +165,8 @@ func TestRunBudgetCountsRequestsNotKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if src.calls.Load() != 2 || sum.Keys != 3 || len(st.saved) != 3 {
-		t.Errorf("calls=%d keys=%d saved=%d, want 2/3/3", src.calls.Load(), sum.Keys, len(st.saved))
+	if src.calls.Load() != 2 || sum.Keys != 3 || len(st.saved) != 3 || st.requests != 2 {
+		t.Errorf("calls=%d keys=%d saved=%d recorded requests=%d, want 2/3/3/2", src.calls.Load(), sum.Keys, len(st.saved), st.requests)
 	}
 }
 
@@ -269,5 +273,42 @@ func TestRunPricesOnlyDueCardsAndStopsEarly(t *testing.T) {
 	}
 	if len(st.saved) != 1 || !st.saved[0].ObservedAt.Equal(now) {
 		t.Errorf("saved = %+v; observations must carry the runner's clock", st.saved)
+	}
+}
+
+func (m *memStore) PutArt(ctx context.Context, _ string, sourceCardID, url string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.art == nil {
+		m.art = map[string]string{}
+	}
+	m.art[sourceCardID] = url
+	m.artCalls++
+	return ctx.Err()
+}
+
+func TestRunStoresCardArtOncePerRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		image     string
+		wantCalls int
+	}{
+		{"source reports art", "https://img.example/a.jpg", 2},
+		{"source reports none", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &memStore{due: []card.Mapping{
+				mapping("a", card.VariantNormal), mapping("a", card.VariantReverseHolo), // one request, two keys
+				mapping("b", card.VariantNormal),
+			}}
+			r := &Runner{Store: st, Source: &scriptSource{image: tt.image}, SourceName: "pw", Budget: 10, Workers: 1, Log: quiet}
+			if _, err := r.Run(t.Context(), nil); err != nil {
+				t.Fatal(err)
+			}
+			if st.artCalls != tt.wantCalls || (tt.image != "" && st.art["a"] != tt.image) {
+				t.Errorf("PutArt calls = %d, art = %v; want %d calls, once per request", st.artCalls, st.art, tt.wantCalls)
+			}
+		})
 	}
 }

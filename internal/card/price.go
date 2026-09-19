@@ -15,7 +15,8 @@ type Price struct {
 type Quote struct {
 	Variant Variant
 	Price   Price
-	Err     error // ErrVariantUnavailable or ErrVariantAmbiguous, wrapped with detail
+	Err     error  // ErrVariantUnavailable or ErrVariantAmbiguous, wrapped with detail
+	Image   string // the card's art URL; the same on every quote of one card, "" if unknown
 }
 
 // Observation is one price reading. CardID is the collection key, not the
