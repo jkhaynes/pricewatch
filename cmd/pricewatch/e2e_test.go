@@ -25,6 +25,7 @@ type fakePokeWallet struct {
 	mu          sync.Mutex
 	normal, rev float64
 	limited     bool // every /cards request returns 429
+	lastOfHour  bool // /cards responses report 1 left, before counting themselves: the hour is then spent
 	cardHits    int
 }
 
@@ -45,6 +46,10 @@ func (f *fakePokeWallet) handler(w http.ResponseWriter, r *http.Request) {
 			"pagination":{"page":1,"total_pages":1}}`)
 	case strings.HasPrefix(r.URL.Path, "/cards/"):
 		f.cardHits++
+		if f.lastOfHour {
+			w.Header().Set("X-RateLimit-Limit-Hour", "100")
+			w.Header().Set("X-RateLimit-Remaining-Hour", "1")
+		}
 		if f.limited {
 			w.WriteHeader(http.StatusTooManyRequests)
 			io.WriteString(w, `{"error":"Rate limit exceeded","message":"Hourly limit exceeded"}`)
@@ -219,5 +224,25 @@ func TestRateLimitEndsRunCleanlyAndNextRunContinues(t *testing.T) {
 	s2 := e.price(t, 10)
 	if s2.StoppedBy != nil || s2.OK != 2 || len(s2.NewlyUnresolved) != 1 {
 		t.Fatalf("next run did not pick up the deferred cards: %+v", s2)
+	}
+}
+
+func TestNoWaitEndsTheRunWhenTheHourIsSpent(t *testing.T) {
+	e := newEnv(t)
+	e.importWith(t, e.writeOverrides(t))
+	e.fake.set(func(f *fakePokeWallet) { f.lastOfHour = true })
+
+	prov := e.prov
+	prov.NoWait = true
+	var out bytes.Buffer
+	// One worker, so the second request starts after the first response has said "none left".
+	sum, err := priceRun(t.Context(), nil, runOpts{DB: e.db, Source: "pokewallet", Budget: 10, Workers: 1,
+		Provider: prov, Now: time.Now}, &out, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// pk_59 (both Mudkip rows) is priced; pk_60 is deferred, not waited for.
+	if !errors.Is(sum.StoppedBy, card.ErrRateLimited) || sum.OK != 2 || sum.Deferred != 1 || e.fake.cardHits != 1 {
+		t.Fatalf("summary = %+v, card requests = %d\n%s", sum, e.fake.cardHits, out.String())
 	}
 }

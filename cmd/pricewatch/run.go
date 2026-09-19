@@ -31,6 +31,7 @@ func cmdRun(ctx context.Context, args []string, out io.Writer, log *slog.Logger)
 	fs.StringVar(&o.Source, "source", pokewallet.Name, "price source")
 	fs.IntVar(&o.Budget, "budget", 100, "max requests (source cards) this run")
 	fs.IntVar(&o.Workers, "workers", 2, "concurrent workers")
+	fs.BoolVar(&o.Provider.NoWait, "no-wait", false, "stop when the hour's allowance is spent instead of waiting (scheduled runs)")
 	fs.StringVar(&o.Provider.BaseURL, "base-url", "", "override the source's API base URL")
 	fs.DurationVar(&o.Provider.Timeout, "timeout", 15*time.Second, "per-request timeout")
 	if err := fs.Parse(args); err != nil {

@@ -42,7 +42,10 @@ type Config struct {
 	// HourWindow says how the source counts its hour. The zero value, Rolling,
 	// is the safe default for a source whose reset time is unknown.
 	HourWindow Window
-	Log        *slog.Logger // nil: pauses are not logged
+	// NoWait makes a spent hour an error wrapping card.ErrRateLimited instead
+	// of a pause, for scheduled runs that must end before the next one (DD-9).
+	NoWait bool
+	Log    *slog.Logger // nil: pauses are not logged
 }
 
 // Window is how a source counts its hourly allowance.
@@ -242,6 +245,10 @@ func (c *Client) awaitHour(ctx context.Context) error {
 		wait := c.hour.reserve(c.now())
 		if wait == 0 {
 			return nil
+		}
+		if c.cfg.NoWait {
+			return fmt.Errorf("%s: hourly allowance used, resets in %v: %w",
+				c.cfg.Name, wait.Round(time.Second), card.ErrRateLimited)
 		}
 		if c.cfg.Log != nil {
 			c.cfg.Log.Info("hourly allowance used; waiting for the hourly window to reset",
