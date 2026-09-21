@@ -4,12 +4,10 @@
 name: pricewatch
 
 on:
-  schedule:
-    # Twice an hour, off the hour: GitHub fires schedules best-effort and drops
-    # most of them, so one cron a hour delivered ~5 runs a day. A trigger that
-    # finds the hour already spent exits in about a minute, so the extra ones
-    # are cheap. PokéWallet's hour resets at :00 UTC (DD-11).
-    - cron: "7,37 * * * *"
+  # No `schedule`: GitHub fires it best-effort, and hourly or twice-hourly crons
+  # both delivered only ~6 runs a day. An external cron calls the dispatch API
+  # at :05 each hour instead, which starts a run within seconds. PokéWallet's
+  # hour resets at :00 UTC (DD-11). Setup is in DD-13.
   workflow_dispatch:
     inputs:
       command:
