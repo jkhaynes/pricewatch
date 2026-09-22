@@ -84,7 +84,10 @@ jobs:
           git rm -rq --cached .
           git add -f pricewatch.db
           git commit -qm "$COMMAND at $(date -u +%FT%TZ), run ${{ github.run_id }}"
-          git push -fq origin HEAD:db
+          # GitHub occasionally rejects a push server-side ("fatal error in
+          # commit_refs"); losing the push loses the run, so retry.
+          for i in 1 2 3; do git push -fq origin HEAD:db && exit 0; sleep $((i * 10)); done
+          exit 1
 
       # The status page (DD-14): derived numbers only, never the database.
       - name: Build the status page
