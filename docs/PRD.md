@@ -475,8 +475,13 @@ repository, `pricewatch-data`, which holds everything personal: `pricewatch.db`,
 TCG Collector export and `expansions.csv`. The public code repo holds only a workflow
 template and setup notes.
 
-- **Trigger:** an hourly `schedule` cron a few minutes past the hour, plus
-  `workflow_dispatch` for manual runs and for `import` after a new export is committed.
+- **Trigger:** `workflow_dispatch` only. An external cron (cron-job.org) POSTs to
+  `repos/jkhaynes/pricewatch-data/actions/workflows/pricewatch.yml/dispatches` at :05 UTC
+  every hour, with a fine-grained token limited to Actions read/write on `pricewatch-data`.
+  The same trigger serves manual runs and `import` after a new export is committed.
+  *Changed 2026-09-21:* the original `schedule` cron was best-effort in practice. Both
+  hourly and twice-hourly crons delivered about 6 runs a day, spaced 2 to 7 hours apart,
+  which left roughly 40% of the daily budget unspent.
 - **Build:** each job checks out this repo (`main`, or a commit the author pins) and runs
   `go build`. No release pipeline.
 - **Import:** a manual `import` job may wait out spent hours (DD-11) instead of stopping, so
@@ -707,7 +712,8 @@ Each phase leaves something complete.
 | The public page leaks personal data | DD-14. The job publishes derived numbers only, never the database or the export, and hides the collection total |
 | Overlapping scheduled runs price the same cards twice | DD-9, DD-13. The workflow's `concurrency` group queues runs one behind another |
 | The cloud database is lost or corrupted | DD-13. The database is pushed back only after a successful run, the WAL is checkpointed on close, and the author can download a copy at any time |
-| GitHub delays, drops or disables scheduled runs | DD-7, DD-13. Progress is durable, so a missed hour costs only that hour, and each run's push keeps the repo active |
+| GitHub delays, drops or disables scheduled runs | DD-7, DD-13. Runs are dispatched by an external cron, not GitHub's scheduler. Progress is durable, so a missed hour costs only that hour |
+| The dispatch token expires and runs stop silently | DD-13, DD-14. The status page shows the last run time; renew the token before its expiry date |
 | Bursting overspends the hourly allowance, for example after a restart | DD-11. The server's own hourly count is the source of truth, requests are reserved before sending, and a 429 still stops dispatch cleanly |
 | Phase 4 never happens | DD-2 keeps the cost of the broker low, and phases 1 to 3 stand on their own |
 | Time lost to setup rather than Go | Minimal dependencies, pure-Go SQLite, no Docker in v1 |
