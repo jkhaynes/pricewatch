@@ -21,6 +21,7 @@ type Store interface {
 	Unresolved(ctx context.Context, source string) ([]card.Mapping, error)
 	RunsSince(ctx context.Context, since time.Time) ([]card.Run, error)
 	QuotaUsed(ctx context.Context, source, day string) (int, error)
+	Query(ctx context.Context, query string, maxRows int) (cols []string, rows [][]any, truncated bool, err error)
 }
 
 // Acquire hands out an open Store. release must be called when the tool is
@@ -50,6 +51,7 @@ func NewServer(acq Acquire, source string, now func() time.Time) *mcp.Server {
 	add(s, acq, "price_history", historyDoc, t.priceHistory)
 	add(s, acq, "movers", moversDoc, t.movers)
 	add(s, acq, "pipeline_status", statusDoc, t.pipelineStatus)
+	add(s, acq, "query", queryDoc(source), t.query)
 	return s
 }
 

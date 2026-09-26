@@ -12,7 +12,7 @@ import (
 )
 
 // wantTools is every tool the server offers. Each task that adds a tool adds it here.
-var wantTools = []string{"collection_value", "top_cards", "find_cards", "price_history", "movers", "pipeline_status"}
+var wantTools = []string{"collection_value", "top_cards", "find_cards", "price_history", "movers", "pipeline_status", "query"}
 
 func TestServerListsEveryTool(t *testing.T) {
 	cs := connect(t, collection(t), "")

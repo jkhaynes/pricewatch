@@ -2177,7 +2177,7 @@ git commit -m "ask: movers over any window and pipeline_status"
 
 **Go notes:** `context.WithTimeout` derives a child context that is cancelled when the timeout fires or the parent is cancelled, whichever comes first. `defer cancel()` releases its timer. It's the equivalent of a linked `CancellationTokenSource` with `CancelAfter`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/ask/query_test.go`:
 
@@ -2256,12 +2256,12 @@ In `internal/ask/server_test.go`, change `wantTools` to:
 var wantTools = []string{"collection_value", "top_cards", "find_cards", "price_history", "movers", "pipeline_status", "query"}
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/ask/ -run 'Query|Server'`
 Expected: FAIL to compile with `undefined: QueryIn`, `queryDoc`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `Store` in `internal/ask/ask.go`:
 
@@ -2336,12 +2336,12 @@ In `NewServer`, after `pipeline_status`:
 	add(s, acq, "query", queryDoc(source), t.query)
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/ask/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/ask
