@@ -72,6 +72,7 @@ func Build(ctx context.Context, st Store, o Options) (Data, error) {
 		UnresolvedTotal: len(unresolved),
 		Index:           Index{Week: PriceIndex(hist, qty, o.Now, 7*day), Month: PriceIndex(hist, qty, o.Now, 30*day)},
 		Budget:          Budget{Used: used, Limit: o.DailyLimit},
+		Activity:        CountActivity(hist, o.Now),
 	}
 	d.Spotlight, d.Rising, d.Falling = Movers(hist, info, o.Now)
 	d.Runs, d.Budget.PerHour = Hourly(runs, o.Now)

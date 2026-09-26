@@ -101,7 +101,7 @@ jobs:
         run: |
           cd site
           git init -q -b main
-          git add index.html
+          git add index.html card.svg
           git -c user.name=pricewatch -c user.email=pricewatch@users.noreply.github.com \
             commit -qm "status at $(date -u +%FT%TZ), run ${{ github.run_id }}"
           git push -fq "https://x-access-token:${SITE_TOKEN}@github.com/jkhaynes/pricewatch-site.git" main

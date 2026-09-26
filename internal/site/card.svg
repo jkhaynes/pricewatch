@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="495" height="200" viewBox="0 0 495 200" role="img" aria-label="pricewatch status: {{.Used}} of {{.Limit}} API requests used today">
+<style>
+.t{font-family:"Segoe UI",Ubuntu,"Helvetica Neue",sans-serif}
+.m{font-family:"Cascadia Mono",SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.ti{font-size:18px;font-weight:600;fill:#F5C2E7}
+.su{font-size:11px;fill:#A6ADC8}
+.nu{font-size:20px;font-weight:600;fill:#CDD6F4}
+.sm{font-size:11px;fill:#CDD6F4}
+.up{font-size:13px;font-weight:600;fill:#A6E3A1}
+.dn{font-size:13px;font-weight:600;fill:#F38BA8}
+.fo{font-size:10px;fill:#7F849C}
+</style>
+<rect x="0.5" y="0.5" width="494" height="199" rx="10" fill="#1E1E2E"/>
+<text x="22" y="34" class="t ti">pricewatch</text>
+<circle cx="125" cy="28" r="4" fill="#A6E3A1"><animate attributeName="opacity" values="1;0.35;1" dur="2s" repeatCount="indefinite"/></circle>
+<text x="134" y="32" class="t su">live · runs hourly on GitHub Actions</text>
+<text x="473" y="32" class="m su" text-anchor="end">Go</text>
+<g transform="translate(62,105)">
+<circle r="36" fill="none" stroke="#313244" stroke-width="7"/>
+<circle r="36" fill="none" stroke="#EBA0AC" stroke-width="7" stroke-linecap="round" stroke-dasharray="{{printf "%.1f" .RingDash}} {{printf "%.1f" .RingGap}}" transform="rotate(-90)"/>
+<text y="2" class="t nu" text-anchor="middle" font-size="18">{{xml .Used}}</text>
+<text y="17" class="t su" text-anchor="middle" font-size="10">/ {{xml .Limit}}</text>
+</g>
+<text x="62" y="160" class="t su" text-anchor="middle">API budget today</text>
+<text x="130" y="84" class="t nu">{{xml .Checked}}</text>
+<text x="130" y="99" class="t su">cards checked (24h)</text>
+<text x="130" y="134" class="t nu">{{xml .Moved}}</text>
+<text x="130" y="149" class="t su">prices moved (24h)</text>
+<line x1="262" y1="62" x2="262" y2="160" stroke="#313244"/>
+{{- with .Mover}}
+<text x="280" y="70" class="t su">Biggest mover this week</text>
+<text x="280" y="89" class="t sm">{{xml .Title}}</text>
+<text x="280" y="104" class="t su">{{xml .Detail}}</text>
+<text x="280" y="128" class="m sm">{{xml .Prices}}</text>
+<text x="473" y="128" class="t {{if .Up}}up{{else}}dn{{end}}" text-anchor="end">{{xml .Change}}</text>
+{{- if .Spark}}
+<polyline fill="none" stroke="#F5C2E7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="{{.Spark}}"/>
+<circle cx="{{printf "%.1f" .EndX}}" cy="{{printf "%.1f" .EndY}}" r="3" fill="#F5C2E7"/>
+{{- end}}
+{{- else}}
+<text x="280" y="70" class="t su">Biggest mover this week</text>
+<text x="280" y="96" class="t sm">Nothing yet</text>
+<text x="280" y="112" class="t su">movers need a week of history</text>
+{{- end}}
+<line x1="22" y1="174" x2="473" y2="174" stroke="#313244"/>
+<text x="22" y="190" class="t fo">{{xml .Tracked}} cards tracked · {{xml .Priced}} priced · value-tiered checks</text>
+<text x="473" y="190" class="t fo" text-anchor="end">updated {{xml .Updated}} UTC</text>
+</svg>

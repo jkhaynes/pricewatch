@@ -272,4 +272,11 @@ func TestSiteIsBuiltFromTheDatabase(t *testing.T) {
 	if !strings.Contains(report.String(), "index.html") {
 		t.Errorf("report = %q, want the written path", report.String())
 	}
+	svg, err := os.ReadFile(filepath.Join(out, "card.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(svg), "<svg") || !strings.Contains(string(svg), "cards checked (24h)") {
+		t.Errorf("card.svg does not look like the profile card:\n%s", svg)
+	}
 }
