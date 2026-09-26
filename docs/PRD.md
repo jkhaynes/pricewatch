@@ -88,6 +88,7 @@ keep the project honest, not enough to justify building for them.
 | FR-13 | Discord webhook on significant price movement | P2 |
 | FR-14 | Runs execute unattended on a schedule, never overlap, and write their report somewhere readable afterwards | P1 |
 | FR-15 | A public, static status page: price movement and coverage, biggest movers with card art, how cards are scheduled, the request budget, and unresolved cards (DD-14) | P1 |
+| FR-16 | A local, read-only MCP server for asking questions about the collection in plain English (DD-15) | P1 |
 
 ## 7. Technical design
 
@@ -612,6 +613,31 @@ no server, and regenerating it hourly doubles as visible proof that the schedule
 
 **Scope:** this narrows section 4's "not a UI" and "no hosting" non-goals to generated static
 files on GitHub Pages. No server, no API, no accounts, no interaction beyond reading.
+
+### DD-15: A local MCP server for asking questions about the collection
+
+**Decision (2026-09-26):** `pricewatch mcp` runs a Model Context Protocol server over
+stdio, so the author can ask Claude questions about the collection in plain English. The
+design is in `docs/superpowers/specs/2026-09-26-mcp-server-design.md`.
+
+- **Tools:** a hybrid of typed tools for the common questions (value, top cards, lookup,
+  price history, movers, pipeline status) and one read-only `query` tool for ad hoc SQL.
+  The typed tools enforce the domain rules, above all that variants are never merged
+  (DD-5).
+- **Read-only by construction:** the database is opened with `mode=ro` and
+  `query_only`, so SQLite refuses writes whatever the SQL says.
+- **Data:** it downloads `pricewatch.db` from the `db` branch of `pricewatch-data`
+  (DD-13) through the GitHub contents API with a read-only token, caches it for an hour,
+  and falls back to the cached copy with a staleness warning when the download fails.
+- **Dependency:** `github.com/modelcontextprotocol/go-sdk`, the official Go SDK. It is
+  not on the pre-approved list. Justification: it is the maintained reference
+  implementation of the protocol, and its generic tool registration derives input
+  schemas from Go types, which is itself worthwhile Go to learn from. Hand-rolling
+  JSON-RPC was considered and rejected by the author.
+
+**Scope:** this narrows section 4's "not an API" non-goal to a local process the MCP
+client starts on the author's machine. No network listener, no hosting, no other users,
+no writes.
 
 ## 9. Acceptance criteria, v1
 
