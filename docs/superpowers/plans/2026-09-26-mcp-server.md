@@ -471,7 +471,7 @@ git commit -m "site: export movers over any window for the MCP server"
 - Exported config fields plus unexported state, with no constructor, is the `http.Server` pattern: fill in the fields, then call methods.
 - `sync.RWMutex` is a value embedded in the struct, not a reference, so a `Cache` must never be copied after use. `go vet` checks this. `release` is literally `c.mu.RUnlock`, a method value, which is a bound delegate in C# terms.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/dbsync/cache_test.go`:
 
@@ -647,12 +647,12 @@ func TestRefreshSwapsTheOpenCopy(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/dbsync/`
 Expected: FAIL to compile with `undefined: Cache`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `internal/dbsync/cache.go`:
 
@@ -834,12 +834,12 @@ func (c *Cache[T]) swap(ctx context.Context, tmp string, now time.Time) error {
 }
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/dbsync/ && go vet ./internal/dbsync/`
 Expected: PASS, and vet is clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dbsync/cache.go internal/dbsync/cache_test.go
