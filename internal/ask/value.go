@@ -72,3 +72,53 @@ func (t tools) collectionValue(ctx context.Context, st Store, in ValueIn) (Value
 	})
 	return out, nil
 }
+
+const topDoc = `The most valuable cards in the collection by latest market price per copy, most
+valuable first. Each row is one exact print (collection_key); Normal and Reverse Holo of the
+same card are separate rows. Unpriced cards are left out.`
+
+type TopIn struct {
+	Limit     int    `json:"limit,omitempty" jsonschema:"how many cards, 1 to 100; default 20"`
+	Expansion string `json:"expansion,omitempty" jsonschema:"only this expansion, by its TCG Collector name"`
+}
+
+type CardsOut struct {
+	Cards     []Card `json:"cards"`
+	Truncated bool   `json:"truncated,omitempty" jsonschema:"more cards matched than were returned"`
+}
+
+func (t tools) topCards(ctx context.Context, st Store, in TopIn) (CardsOut, error) {
+	limit := in.Limit
+	switch {
+	case limit == 0:
+		limit = 20
+	case limit < 0 || limit > 100:
+		return CardsOut{}, fmt.Errorf("limit %d: want 1 to 100", limit)
+	}
+	cards, _, err := t.cards(ctx, st)
+	if err != nil {
+		return CardsOut{}, err
+	}
+	var out []Card
+	for _, c := range cards {
+		if c.Price == nil || (in.Expansion != "" && !strings.EqualFold(c.Expansion, in.Expansion)) {
+			continue
+		}
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b Card) int {
+		if c := cmp.Compare(*b.Price, *a.Price); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Key, b.Key)
+	})
+	return capped(out, limit), nil
+}
+
+// capped returns at most limit cards, and says whether it dropped any.
+func capped(cards []Card, limit int) CardsOut {
+	if len(cards) > limit {
+		return CardsOut{Cards: cards[:limit], Truncated: true}
+	}
+	return CardsOut{Cards: cards}
+}

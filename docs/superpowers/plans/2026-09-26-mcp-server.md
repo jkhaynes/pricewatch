@@ -1542,7 +1542,7 @@ git commit -m "ask: MCP server with freshness-stamped answers and collection_val
 - Consumes: `tools.cards`, `Card`, `add`, fixture from Task 5; `card.Normalize`.
 - Produces: `TopIn`, `FindIn`, `HistoryIn`, `CardsOut{Cards []Card; Truncated bool}`, `HistoryOut{Card Card; Prices []Point}`, `Point{At time.Time; Price float64}`, `func capped(cards []Card, limit int) CardsOut`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `internal/ask/value_test.go`:
 
@@ -1676,12 +1676,12 @@ In `internal/ask/server_test.go`, change `wantTools` to:
 var wantTools = []string{"collection_value", "top_cards", "find_cards", "price_history"}
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/ask/`
 Expected: FAIL to compile with `undefined: TopIn`, `FindIn`, `HistoryIn`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `internal/ask/value.go`:
 
@@ -1833,12 +1833,12 @@ In `NewServer` in `internal/ask/ask.go`, after the `collection_value` line:
 	add(s, acq, "price_history", historyDoc, t.priceHistory)
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/ask/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/ask

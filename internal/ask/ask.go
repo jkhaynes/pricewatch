@@ -41,6 +41,9 @@ func NewServer(acq Acquire, source string, now func() time.Time) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "pricewatch", Version: "v1"}, nil)
 	t := tools{source: source, now: now, queryTimeout: 10 * time.Second}
 	add(s, acq, "collection_value", valueDoc, t.collectionValue)
+	add(s, acq, "top_cards", topDoc, t.topCards)
+	add(s, acq, "find_cards", findDoc, t.findCards)
+	add(s, acq, "price_history", historyDoc, t.priceHistory)
 	return s
 }
 

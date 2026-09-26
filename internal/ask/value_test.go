@@ -45,3 +45,42 @@ func TestCollectionValue(t *testing.T) {
 		})
 	}
 }
+
+func TestTopCards(t *testing.T) {
+	st := collection(t)
+	tests := []struct {
+		name          string
+		in            TopIn
+		want          []string // card names with variant, most valuable unit price first
+		wantTruncated bool
+		wantErr       bool
+	}{
+		{name: "default: every priced card", in: TopIn{},
+			want: []string{"Mudkip Reverse Holo", "Mudkip Normal", "Tropius Normal"}},
+		{name: "limit", in: TopIn{Limit: 1}, want: []string{"Mudkip Reverse Holo"}, wantTruncated: true},
+		{name: "one expansion", in: TopIn{Expansion: "Unseen Forces"}, want: []string{"Tropius Normal"}},
+		{name: "limit over 100", in: TopIn{Limit: 101}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := testTools().topCards(t.Context(), st, tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, want error: %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if names := labels(got.Cards); !slices.Equal(names, tt.want) || got.Truncated != tt.wantTruncated {
+				t.Errorf("got %v truncated=%v, want %v truncated=%v", names, got.Truncated, tt.want, tt.wantTruncated)
+			}
+		})
+	}
+}
+
+func labels(cards []Card) []string {
+	var out []string
+	for _, c := range cards {
+		out = append(out, c.Name+" "+c.Variant)
+	}
+	return out
+}
