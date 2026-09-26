@@ -860,7 +860,7 @@ git commit -m "dbsync: cache the database for a TTL and hot-swap it on refresh"
 
 **Go notes:** `GitHub` returns a closure that captures the request's details, the Go equivalent of returning a `Func<CancellationToken, Stream, Task>`. `io.Copy` streams the body straight to the file, so the database is never held in memory.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/dbsync/github_test.go`:
 
@@ -942,12 +942,12 @@ func TestGitHubHonoursCancellation(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/dbsync/ -run GitHub`
 Expected: FAIL to compile with `undefined: GitHub`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `internal/dbsync/github.go`:
 
@@ -999,12 +999,12 @@ func GitHub(client *http.Client, api, repo, ref, path, token string) func(contex
 }
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/dbsync/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dbsync/github.go internal/dbsync/github_test.go
