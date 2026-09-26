@@ -1039,13 +1039,13 @@ git commit -m "dbsync: download the database from the db branch on GitHub"
 - `add` is a generic *function*, not a method, because Go methods cannot have their own type parameters.
 - `t.collectionValue` passed as a value is a method value: the receiver is bound, like a C# delegate over an instance method.
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 ```bash
 go get github.com/modelcontextprotocol/go-sdk@v1.8.0
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `internal/ask/fixture_test.go`:
 
@@ -1305,12 +1305,12 @@ func TestNoDatabaseIsAToolError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the tests and see them fail**
+- [x] **Step 3: Run the tests and see them fail**
 
 Run: `go test ./internal/ask/`
 Expected: FAIL to compile with `undefined: tools`, `NewServer`, `Answer`, `ValueIn`, `ValueOut`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `internal/ask/ask.go`:
 
@@ -1515,14 +1515,14 @@ func (t tools) collectionValue(ctx context.Context, st Store, in ValueIn) (Value
 }
 ```
 
-- [ ] **Step 5: Run the tests and see them pass**
+- [x] **Step 5: Run the tests and see them pass**
 
 Run: `go mod tidy && go test ./internal/ask/ && go vet ./...`
 Expected: PASS. `go.mod` now lists `github.com/modelcontextprotocol/go-sdk v1.8.0` as a direct requirement.
 
 If the SDK rejects a schema (for example `validating tool output`), read the error, which names the field. The likely cause is a field missing `omitempty` that is legitimately empty. Fix the tag rather than loosening the type.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add go.mod go.sum internal/ask
