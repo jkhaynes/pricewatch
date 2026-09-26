@@ -17,6 +17,10 @@ type Store interface {
 	Listings(ctx context.Context, source string) ([]card.Listing, error)
 	History(ctx context.Context, source string) ([]card.Observation, error)
 	LastFinished(ctx context.Context) (*time.Time, error)
+	MappingCounts(ctx context.Context, source string) (map[card.Status]int, error)
+	Unresolved(ctx context.Context, source string) ([]card.Mapping, error)
+	RunsSince(ctx context.Context, since time.Time) ([]card.Run, error)
+	QuotaUsed(ctx context.Context, source, day string) (int, error)
 }
 
 // Acquire hands out an open Store. release must be called when the tool is
@@ -44,6 +48,8 @@ func NewServer(acq Acquire, source string, now func() time.Time) *mcp.Server {
 	add(s, acq, "top_cards", topDoc, t.topCards)
 	add(s, acq, "find_cards", findDoc, t.findCards)
 	add(s, acq, "price_history", historyDoc, t.priceHistory)
+	add(s, acq, "movers", moversDoc, t.movers)
+	add(s, acq, "pipeline_status", statusDoc, t.pipelineStatus)
 	return s
 }
 

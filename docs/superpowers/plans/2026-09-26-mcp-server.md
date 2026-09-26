@@ -1858,7 +1858,7 @@ git commit -m "ask: top_cards, find_cards and price_history, one row per print"
 - Consumes: `site.Moves`, `Mover.Key`, `site.ByKey` (Task 2); `site.Groups`, `site.Group` (existing); `(*store.SQLite).MappingCounts`, `Unresolved`, `RunsSince`, `QuotaUsed`, `QuotaAdd` (existing).
 - Produces: `MoversIn{Days int}`, `MoversOut{Rising, Falling []Move}`, `Move`, `StatusOut`; `Store` gains four methods.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/ask/movers_test.go`:
 
@@ -1891,7 +1891,7 @@ func TestMovers(t *testing.T) {
 		wantErr     bool
 	}{
 		{name: "default week", wantRising: []string{"Riser"}, wantFalling: []string{"Faller"}},
-		{name: "three days sees the recent move too", days: 3, wantRising: []string{"Riser", "Recent"}, wantFalling: []string{"Faller"}},
+		{name: "two days sees the recent move too", days: 2, wantRising: []string{"Riser", "Recent"}, wantFalling: []string{"Faller"}},
 		{name: "nine days: only the riser has a baseline that old", days: 9, wantRising: []string{"Riser"}},
 		{name: "out of range", days: 91, wantErr: true},
 	}
@@ -1926,7 +1926,7 @@ func moveNames(ms []Move) []string {
 }
 ```
 
-Riser and Recent both rise exactly +100% in the three-day case. `byMagnitude` breaks the tie by collection key (`region|expansion|number|...`), and Riser's `1/100` sorts before Recent's `3/100`.
+Riser and Recent both rise exactly +100% in the two-day case (Recent's baseline sits exactly on the cutoff, which counts). `byMagnitude` breaks the tie by collection key (`region|expansion|number|...`), and Riser's `1/100` sorts before Recent's `3/100`.
 
 `internal/ask/status_test.go`:
 
@@ -1979,12 +1979,12 @@ In `internal/ask/server_test.go`, change `wantTools` to:
 var wantTools = []string{"collection_value", "top_cards", "find_cards", "price_history", "movers", "pipeline_status"}
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/ask/`
 Expected: FAIL to compile with `undefined: MoversIn`, `Move`, and `tt.pipelineStatus`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Grow `Store` in `internal/ask/ask.go`:
 
@@ -2150,12 +2150,12 @@ In `NewServer`, after `price_history`:
 	add(s, acq, "pipeline_status", statusDoc, t.pipelineStatus)
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/ask/`
 Expected: PASS. 
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/ask
