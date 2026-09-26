@@ -22,6 +22,7 @@ type Data struct {
 	Unresolved      []Group   `json:"unresolved"`
 	UnresolvedTotal int       `json:"unresolvedTotal"`
 	Budget          Budget    `json:"budget"`
+	Activity        Activity  `json:"activity"` // the last day, for the profile card
 }
 
 // Index is the value-weighted price change in percent; nil means no card has

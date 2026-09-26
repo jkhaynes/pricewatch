@@ -56,17 +56,32 @@ func buildSite(ctx context.Context, o siteOpts, out io.Writer) (err error) {
 		return fmt.Errorf("create %s: %w", o.Out, err)
 	}
 	path := filepath.Join(o.Out, "index.html")
+	if err := writeWith(path, func(w io.Writer) error { return site.Render(w, d) }); err != nil {
+		return err
+	}
+	// The profile card (README embed) is written from the same Data, so the
+	// page and the card can never disagree.
+	cardPath := filepath.Join(o.Out, "card.svg")
+	if err := writeWith(cardPath, func(w io.Writer) error { return site.RenderCard(w, d) }); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "wrote %s and %s: %d cards priced of %d, %d unresolved\n", path, cardPath, d.Coverage.Priced, d.Coverage.Total, d.UnresolvedTotal)
+	return nil
+}
+
+// writeWith creates path and hands it to render. The Close error is returned
+// too: for a written file it is where a failed flush shows up.
+func writeWith(path string, render func(io.Writer) error) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
-	if err := site.Render(f, d); err != nil {
+	if err := render(f); err != nil {
 		f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	fmt.Fprintf(out, "wrote %s: %d cards priced of %d, %d unresolved\n", path, d.Coverage.Priced, d.Coverage.Total, d.UnresolvedTotal)
 	return nil
 }

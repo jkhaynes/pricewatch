@@ -213,6 +213,12 @@ biggest movers with card art, how each card is scheduled, the request budget and
 pricewatch refuses to guess. It publishes derived numbers only: never the database, the
 export, quantities or the collection's total value.
 
+The same run also writes `card.svg`, a small status card (budget, cards checked, the week's biggest mover) sized for embedding in a GitHub profile README:
+
+```markdown
+<a href="https://jkhaynes.github.io/pricewatch-site"><img src="https://jkhaynes.github.io/pricewatch-site/card.svg" width="495" alt="pricewatch status"></a>
+```
+
 To preview it locally from any copy of the database:
 
 ```powershell
