@@ -76,7 +76,7 @@
 - Why `immutable=1`: a WAL-mode file opened with plain `mode=ro` still gets `-wal` and `-shm` side files. Those could outlive a swap of the main file and be applied to the new copy. `immutable=1` tells SQLite the file cannot change, so it creates neither. This was verified with modernc before planning, and writes are still refused.
 - `Query` scans into `[]any` through a parallel slice of pointers (`ptrs[i] = &row[i]`). `database/sql` has no untyped "give me the row" call, so this is the idiom. There's no direct C# equivalent to `IDataReader.GetValues`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/store/readonly_test.go`:
 
@@ -219,12 +219,12 @@ func TestLastFinished(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./internal/store/ -run 'ReadOnly|Query|LastFinished'`
 Expected: FAIL to compile with `undefined: OpenReadOnly` (and `ro.Query`, `s.LastFinished`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `internal/store/readonly.go`:
 
@@ -307,12 +307,12 @@ func (s *SQLite) LastFinished(ctx context.Context) (*time.Time, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./internal/store/`
 Expected: PASS (all store tests, old and new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/readonly.go internal/store/readonly_test.go
