@@ -12,13 +12,13 @@ import (
 var now = time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 
 // hist builds history from "key: price@hoursAgo" steps, oldest first per key.
-func hist(steps ...step) map[string]series {
+func hist(steps ...step) map[string]Series {
 	var obs []card.Observation
 	for _, s := range steps {
 		p := s.price
 		obs = append(obs, card.Observation{CardID: s.key, Price: card.Price{Market: &p}, ObservedAt: now.Add(-s.ago)})
 	}
-	return byKey(obs)
+	return ByKey(obs)
 }
 
 type step struct {
@@ -137,3 +137,32 @@ func TestPriceIndex(t *testing.T) {
 }
 
 func ptr(f float64) *float64 { return &f }
+
+func TestMovesUsesTheWindow(t *testing.T) {
+	h := hist(
+		step{"week", 10, 8 * day}, step{"week", 15, time.Hour}, // +50%, baseline 8 days old
+		step{"day", 20, 2 * day}, step{"day", 30, time.Hour}, // +50%, baseline 2 days old
+		step{"fall", 40, 3 * day}, step{"fall", 30, time.Hour}, // -25%, baseline 3 days old
+	)
+	cards := info("week", "day", "fall")
+	tests := []struct {
+		name   string
+		window time.Duration
+		want   []string
+	}{
+		{"one day: every baseline is old enough", day, []string{"day", "week", "fall"}},
+		{"two and a half days: day's baseline is too new", 60 * time.Hour, []string{"week", "fall"}},
+		{"seven days: only week's baseline is old enough", 7 * day, []string{"week"}},
+		{"thirty days: no baseline is old enough", 30 * day, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := keys(Moves(h, cards, now, tt.window)); !slices.Equal(got, tt.want) {
+				t.Errorf("Moves = %v, want %v (largest first, ties by key)", got, tt.want)
+			}
+		})
+	}
+	if m := Moves(h, cards, now, day); m[0].Key() != "day" {
+		t.Errorf("Key() = %q, want day", m[0].Key())
+	}
+}

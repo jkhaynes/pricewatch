@@ -20,11 +20,12 @@ const (
 	maxToday   = 5
 )
 
-// series is one key's market observations, oldest first.
-type series []card.Observation
+// Series is one key's market observations, oldest first.
+type Series []card.Observation
 
-func byKey(obs []card.Observation) map[string]series {
-	out := map[string]series{}
+// ByKey groups observations by collection key, each oldest first.
+func ByKey(obs []card.Observation) map[string]Series {
+	out := map[string]Series{}
 	for _, o := range obs {
 		out[o.CardID] = append(out[o.CardID], o)
 	}
@@ -36,7 +37,7 @@ func byKey(obs []card.Observation) map[string]series {
 
 // move compares a series' latest price with its last price at or before cut.
 // A card's first price is never a move: without a baseline, ok is false.
-func move(s series, cut time.Time) (was, latest card.Observation, ok bool) {
+func move(s Series, cut time.Time) (was, latest card.Observation, ok bool) {
 	for i := len(s) - 1; i >= 0; i-- {
 		if !s[i].ObservedAt.After(cut) {
 			if i == len(s)-1 {
@@ -66,25 +67,35 @@ func byMagnitude(a, b Mover) int {
 	return cmp.Compare(a.key, b.key)
 }
 
-// Movers returns the week's biggest move as the spotlight, then the next
-// risers and the top fallers (DD-14).
-func Movers(hist map[string]series, info map[string]card.Listing, now time.Time) (spot *Mover, rising, falling []Mover) {
+// Key is the mover's collection key.
+func (m Mover) Key() string { return m.key }
+
+// Moves returns every significant move over window, largest first: each card's
+// latest price against its last price at or before now minus window.
+func Moves(hist map[string]Series, info map[string]card.Listing, now time.Time, window time.Duration) []Mover {
 	var all []Mover
 	for key, s := range hist {
 		l, ok := info[key]
 		if !ok {
 			continue
 		}
-		was, latest, ok := move(s, now.Add(-moveWindow))
+		was, latest, ok := move(s, now.Add(-window))
 		if !ok || !significant(*was.Market, *latest.Market) {
 			continue
 		}
 		all = append(all, newMover(key, l, *was.Market, *latest.Market))
 	}
+	slices.SortFunc(all, byMagnitude)
+	return all
+}
+
+// Movers returns the week's biggest move as the spotlight, then the next
+// risers and the top fallers (DD-14).
+func Movers(hist map[string]Series, info map[string]card.Listing, now time.Time) (spot *Mover, rising, falling []Mover) {
+	all := Moves(hist, info, now, moveWindow)
 	if len(all) == 0 {
 		return nil, nil, nil
 	}
-	slices.SortFunc(all, byMagnitude)
 	top := all[0]
 	for _, o := range hist[top.key] {
 		if o.ObservedAt.After(now.Add(-chartSpan)) {
@@ -105,7 +116,7 @@ func Movers(hist map[string]series, info map[string]card.Listing, now time.Time)
 // Today compares each $100+ card checked in the last 24 hours with its
 // previous check. Every card in that tier runs on the same daily clock, so
 // the comparison is fair (DD-14).
-func Today(hist map[string]series, info map[string]card.Listing, now time.Time) []Mover {
+func Today(hist map[string]Series, info map[string]card.Listing, now time.Time) []Mover {
 	var out []Mover
 	for key, s := range hist {
 		l, ok := info[key]
@@ -125,7 +136,7 @@ func Today(hist map[string]series, info map[string]card.Listing, now time.Time) 
 // PriceIndex is the value-weighted change in percent over window, counting
 // only cards priced at both ends, so coverage growing during the first pass
 // cannot look like the market rising. nil means no card has a baseline yet.
-func PriceIndex(hist map[string]series, qty map[string]int, now time.Time, window time.Duration) *float64 {
+func PriceIndex(hist map[string]Series, qty map[string]int, now time.Time, window time.Duration) *float64 {
 	var then, latestSum float64
 	for key, s := range hist {
 		was, latest, ok := move(s, now.Add(-window))

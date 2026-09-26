@@ -60,7 +60,7 @@ func Build(ctx context.Context, st Store, o Options) (Data, error) {
 	for _, l := range listings {
 		info[l.Key], qty[l.Key] = l, l.Quantity
 	}
-	hist := byKey(obs)
+	hist := ByKey(obs)
 
 	d := Data{
 		GeneratedAt:     o.Now.UTC(),

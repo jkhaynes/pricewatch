@@ -338,7 +338,7 @@ git commit -m "store: open a database read-only, run raw queries, report freshne
 
 **Go notes:** Capitalisation *is* visibility in Go. Renaming `series` to `Series` is what makes the type usable from `ask`. There's no `internal`/`public` keyword. Package `internal/...` directories add a second boundary: only code under this module can import them.
 
-- [ ] **Step 1: Rename, mechanically**
+- [x] **Step 1: Rename, mechanically**
 
 ```bash
 gofmt -r 'series -> Series' -w internal/site
@@ -358,7 +358,7 @@ func ByKey(obs []card.Observation) map[string]Series {
 Run: `go test ./internal/site/`
 Expected: PASS. The rename changes no behaviour.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Append to `internal/site/movers_test.go`:
 
@@ -393,12 +393,12 @@ func TestMovesUsesTheWindow(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the test and see it fail**
+- [x] **Step 3: Run the test and see it fail**
 
 Run: `go test ./internal/site/ -run TestMovesUsesTheWindow`
 Expected: FAIL to compile with `undefined: Moves`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 In `internal/site/movers.go`, replace the body of `Movers` up to the sort, and add `Moves` and `Key`:
 
@@ -438,12 +438,12 @@ func Movers(hist map[string]Series, info map[string]card.Listing, now time.Time)
 
 Keep everything in `Movers` after `top := all[0]` exactly as it was. Delete only the old loop, the empty check and the `slices.SortFunc` call, which now live in `Moves`.
 
-- [ ] **Step 5: Run the tests and see them pass**
+- [x] **Step 5: Run the tests and see them pass**
 
 Run: `go test ./internal/site/ ./internal/store/ ./cmd/...`
 Expected: PASS. `TestMovers` still passes, which proves the refactor kept the page's behaviour.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/site
