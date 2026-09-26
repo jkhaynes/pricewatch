@@ -2365,7 +2365,7 @@ git commit -m "ask: read-only query tool with the schema and its gotchas"
 - `return cache.Acquire(ctx)` inside a function that returns `(ask.Store, func(), string, error)` compiles even though `Acquire` returns `*store.SQLite`. A multi-value return only needs each value to be *assignable*.
 - What Go does not do is covariance in function types: a `func(...) (*store.SQLite, ...)` is not an `ask.Acquire`. So the closure adapter is required. C#'s delegate variance would have hidden this.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `cmd/pricewatch/mcp_test.go`:
 
@@ -2482,12 +2482,12 @@ The DELETE assertion looks for SQLite's message, `attempt to write a readonly da
 
 If `serveMCP` returns a non-nil error when the client disconnects cleanly (the SDK may report the closed connection), assert `errors.Is` against the SDK's sentinel for a closed connection instead. Do not drop the check.
 
-- [ ] **Step 2: Run the tests and see them fail**
+- [x] **Step 2: Run the tests and see them fail**
 
 Run: `go test ./cmd/pricewatch/ -run 'NewCache|MCP'`
 Expected: FAIL to compile with `undefined: newCache`, `mcpOpts`, `serveMCP`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `cmd/pricewatch/mcp.go`:
 
@@ -2581,7 +2581,7 @@ and to the `switch`:
 		return cmdMCP(ctx, args[1:], out, log)
 ```
 
-- [ ] **Step 4: Run the tests and see them pass**
+- [x] **Step 4: Run the tests and see them pass**
 
 Run: `go test ./... && go vet ./... && gofmt -l cmd/ internal/`
 Expected: every package PASS, vet clean, gofmt prints nothing.
@@ -2600,7 +2600,7 @@ claude mcp add pricewatch -e PRICEWATCH_GITHUB_TOKEN=<token> -- pricewatch mcp
 
 In a new Claude Code session, ask "what's my collection worth?" and "show me every print of Tropius I own". Confirm that `%LocalAppData%\pricewatch\pricewatch.db` now exists. Report what happened. This is a manual check, and the author runs it.
 
-- [ ] **Step 6: README**
+- [x] **Step 6: README**
 
 Add a section to `README.md` after "Status page":
 
@@ -2629,7 +2629,7 @@ Tools: `collection_value`, `top_cards`, `find_cards`, `price_history`, `movers`,
 matches several prints comes back as several rows; their prices are never combined.
 ````
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add cmd/pricewatch/mcp.go cmd/pricewatch/mcp_test.go cmd/pricewatch/main.go README.md

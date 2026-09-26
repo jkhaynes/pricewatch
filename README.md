@@ -241,6 +241,29 @@ One-time setup for publishing:
 When the token expires, the publish step fails but the database is still saved. Create a
 new token and replace the secret.
 
+## Asking Claude about the collection
+
+`pricewatch mcp` is a local [MCP](https://modelcontextprotocol.io) server (DD-15). Register it
+once and Claude can answer questions like "what's my collection worth?", "what moved this
+week?" or "which cards do I own two of that are worth over $5?".
+
+It downloads `pricewatch.db` from the `db` branch of `pricewatch-data`, keeps it for an hour
+in your user cache directory, and opens it read-only. It needs a fine-grained token with
+read-only **Contents** access to that repo:
+
+```
+go install ./cmd/pricewatch
+claude mcp add pricewatch -e PRICEWATCH_GITHUB_TOKEN=<token> -- pricewatch mcp
+```
+
+Flags: `--db <path>` uses a local file and never downloads; `--ttl` changes how long a copy
+counts as fresh (default `1h`).
+
+Tools: `collection_value`, `top_cards`, `find_cards`, `price_history`, `movers`,
+`pipeline_status`, and `query` for anything else (read-only SQL). Every answer carries
+`data_as_of`, and a `stale` warning when the copy could not be refreshed. A card name that
+matches several prints comes back as several rows; their prices are never combined.
+
 ## What phase 1 does not do
 
 - **Condition:** prices are TCGplayer market prices, and the condition column is ignored.
