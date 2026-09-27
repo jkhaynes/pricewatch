@@ -34,7 +34,7 @@ func TestActivity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CountActivity(byKey(tt.obs), now)
+			got := CountActivity(ByKey(tt.obs), now)
 			if got.Checked != tt.checked || got.Moved != tt.mov {
 				t.Errorf("got %+v, want checked %d moved %d", got, tt.checked, tt.mov)
 			}

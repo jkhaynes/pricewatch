@@ -19,7 +19,7 @@ type Activity struct {
 
 // CountActivity reads the last 24 hours from each key's own history. A first
 // price is a check but never a move, matching Today and Movers.
-func CountActivity(hist map[string]series, now time.Time) Activity {
+func CountActivity(hist map[string]Series, now time.Time) Activity {
 	var a Activity
 	for _, s := range hist {
 		latest := s[len(s)-1]

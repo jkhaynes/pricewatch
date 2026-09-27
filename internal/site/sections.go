@@ -76,7 +76,7 @@ func tierLabel(p priority.Policy, i int) string {
 // Cover counts keys with at least one market price, and the share of the
 // collection's export value they hold. Export prices weigh the share only;
 // they are never published.
-func Cover(listings []card.Listing, hist map[string]series) Coverage {
+func Cover(listings []card.Listing, hist map[string]Series) Coverage {
 	c := Coverage{Total: len(listings)}
 	var all, priced float64
 	for _, l := range listings {
