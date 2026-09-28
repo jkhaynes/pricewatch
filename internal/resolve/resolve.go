@@ -72,7 +72,7 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 	if !english[card.Normalize(row.Language)] {
 		return fail(card.StatusUnmatched, "unsupported language %q", row.Language)
 	}
-	variant, _, err := card.ParseVariant(row.Variant)
+	variant, rowPrint, err := card.ParseVariant(row.Variant)
 	if err != nil {
 		return fail(card.StatusUnmatched, "%v", err)
 	}
@@ -95,10 +95,17 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 	if err != nil {
 		return card.Mapping{}, err
 	}
+	var atNumber []string // every product at the number, of any print, for reasons
 	var byNumber, byName, byAlias []card.SourceCard
 	want := normName(row.Name)
 	for _, c := range cards {
 		if normNumber(c.Number) != normNumber(local) {
+			continue
+		}
+		atNumber = append(atNumber, c.Name)
+		// A pattern print is its own product: a plain row must never price one,
+		// nor a Poké Ball row the plain card or the Master Ball one.
+		if c.Print != rowPrint {
 			continue
 		}
 		byNumber = append(byNumber, c)
@@ -115,8 +122,10 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 		byName = byAlias
 	}
 	switch {
-	case len(byNumber) == 0:
+	case len(atNumber) == 0:
 		return fail(card.StatusUnmatched, "number %s not in set %s", local, setID)
+	case len(byNumber) == 0:
+		return fail(card.StatusUnmatched, "no %s print at set %s #%s; has %q", rowPrint, setID, local, atNumber)
 	case len(byName) == 0:
 		var names []string
 		for _, c := range byNumber {
