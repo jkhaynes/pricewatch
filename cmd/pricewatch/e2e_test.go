@@ -351,6 +351,9 @@ func TestPatternPrintsArePricedAsTheirOwnProducts(t *testing.T) {
 	}
 	got := map[string]float64{}
 	for _, o := range obs {
+		if o.Market == nil {
+			t.Fatalf("%s: observation has no market price", o.CardID)
+		}
 		got[o.CardID] = *o.Market
 	}
 	const k = "international|white flare|014/086|"

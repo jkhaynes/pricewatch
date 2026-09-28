@@ -94,7 +94,7 @@ func TestGroups(t *testing.T) {
 		order = append(order, g.Label)
 	}
 	want := map[string]int{
-		"Special prints not priced yet": 2, "Name differs at the source": 1, "Pattern print not listed": 1, "Number not in the set": 1,
+		"Special prints not priced yet": 2, "Name differs at the source": 1, "Print not listed at the number": 1, "Number not in the set": 1,
 		"Gone from the source": 1, "Print not priced at the source": 1, "Unknown expansion": 1,
 		"Matches more than one set": 1, "More than one price for the print": 1,
 		"More than one card matches": 1, "Not English": 1, "Other": 1,

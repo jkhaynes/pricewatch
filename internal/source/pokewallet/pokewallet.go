@@ -127,9 +127,9 @@ func (p *Provider) Cards(ctx context.Context, setID string) ([]card.SourceCard, 
 			number := c.CardInfo.CardNumber
 			local, _, _ := strings.Cut(number, "/")
 			sc := card.SourceCard{ID: c.ID, Number: local}
-			if p, base := patternOf(c.CardInfo.Name); p != card.PrintStandard {
+			if pr, base := patternOf(c.CardInfo.Name); pr != card.PrintStandard {
 				// Keep the full name for reports; match by the bare name.
-				sc.Name, sc.Print = c.CardInfo.Name, p
+				sc.Name, sc.Print = c.CardInfo.Name, pr
 				if bare, ok := bareName(strings.TrimSuffix(base, " - "+number), local); ok {
 					sc.Aliases = []string{bare}
 				}
