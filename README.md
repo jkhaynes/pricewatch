@@ -267,8 +267,9 @@ matches several prints comes back as several rows; their prices are never combin
 ## What phase 1 does not do
 
 - **Condition:** prices are TCGplayer market prices, and the condition column is ignored.
-- **Special prints:** ball-pattern and Energy reverse holos, Cosmos, Prize Pack, stamps and
-  promos (about 9% of the author's collection) are reported as `unsupported variant`.
+- **Special prints:** Cosmos, Prize Pack, stamps and promos are reported as
+  `unsupported variant`. Ball-pattern, Rocket and Energy reverse holos are priced from
+  their own products (PRD DD-16).
 - **Retry with backoff** arrives in phase 4 with the job queue. Until then, a card that fails
   transiently is simply first in line on the next run. A second source (TCGdex) is a future
   idea. See PRD sections 10 and 13.

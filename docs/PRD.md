@@ -89,6 +89,7 @@ keep the project honest, not enough to justify building for them.
 | FR-14 | Runs execute unattended on a schedule, never overlap, and write their report somewhere readable afterwards | P1 |
 | FR-15 | A public, static status page: price movement and coverage, biggest movers with card art, how cards are scheduled, the request budget, and unresolved cards (DD-14) | P1 |
 | FR-16 | A local, read-only MCP server for asking questions about the collection in plain English (DD-15) | P1 |
+| FR-17 | Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) as their own source products, never as the plain card (DD-16) | P1 |
 
 ## 7. Technical design
 
@@ -639,6 +640,22 @@ design is in `docs/superpowers/specs/2026-09-26-mcp-server-design.md`.
 client starts on the author's machine. No network listener, no hosting, no other users,
 no writes.
 
+### DD-16: A pattern print is its own source product, matched by print
+
+**Decision (2026-09-27):** a pattern reverse holo (Poké Ball, Master Ball, Friend, Quick,
+Love, Dusk Ball, Rocket, Energy) is priced from its own source product, never from the
+plain card. The design is in `docs/superpowers/specs/2026-09-27-special-prints-design.md`.
+
+- **What the source does:** PokéWallet lists each pattern print as a separate product at
+  the plain card's number, e.g. `Pansear (Poke Ball Pattern)`. SV sets name it
+  `(… Ball Pattern)`, ME sets `(… Ball)`, and the one price sits under `Holofoil` or
+  `Reverse Holofoil` depending on the era (probe, 2026-09-27).
+- **`card.Print`:** each row and each source product has a print. The provider derives a
+  product's print from its own qualifier table, so source wording never reaches the
+  resolver. The resolver only considers products whose print equals the row's.
+- **Pricing:** `VariantPattern` accepts `Holofoil` or `Reverse Holofoil`. A product with
+  both is ambiguous and reported (DD-5).
+
 ## 9. Acceptance criteria, v1
 
 - [x] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
@@ -775,6 +792,9 @@ did for the dashboard.
    supporting them means teaching the resolver to find those products by name, not adding
    rows to the variant table. Confirm how the source names a few of them before designing
    anything. Each supported print must still match exactly one price, or be reported (DD-5).
+
+   **Delivered 2026-09-27 for ball-pattern, Rocket and Energy reverse holos (FR-17, DD-16).**
+   Cosmos, Prize Pack, stamps and promos remain excluded.
 
 3. **Cross-provider mapping by TCGplayer product ID.** Both sources expose TCGplayer's
    product ID:
