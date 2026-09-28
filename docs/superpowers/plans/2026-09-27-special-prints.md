@@ -57,7 +57,7 @@
   - `func ParseVariant(label string) (Variant, Print, error)`
   - `SourceCard.Print Print` (new field, after `Name`)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Replace `TestParseVariant` in `internal/card/card_test.go` and add `TestPrintString`:
 
@@ -123,12 +123,12 @@ func TestPrintString(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `go test ./internal/card/`
 Expected: build failure: `assignment mismatch: 3 variables but ParseVariant returns 2 values`, and `undefined: PrintStandard` / `VariantPattern`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/card/card.go`, add `VariantPattern` to the `Variant` constants:
 
@@ -233,12 +233,12 @@ In `internal/resolve/resolve.go`, keep it compiling (Task 3 uses the print):
 
 > **Go note:** Go has no enums. A named string type plus typed constants is the idiom. Unlike a C# enum, `Print("banana")` compiles, so the parse tables are the only place values should come from. `String()` makes `Print` a `fmt.Stringer`, so `%s` prints `standard` instead of an empty string. It's like overriding `ToString()`, but picked up through an implicit interface.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./...`
 Expected: all PASS. `resolve` still passes because the print is discarded for now.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/card internal/resolve/resolve.go
@@ -257,7 +257,7 @@ git commit -m "card: Print, VariantPattern, and ParseVariant returns the print"
 - Consumes: `card.Print*`, `card.VariantPattern`, `SourceCard.Print` (Task 1)
 - Produces: `Cards` returns pattern products with `Print` set, `Name` unchanged (raw), `Aliases` = `[bare name]`; `Quote` answers `VariantPattern` from `Holofoil` or `Reverse Holofoil`.
 
-- [ ] **Step 1: Confirm the unverified qualifiers live**
+- [x] **Step 1: Confirm the unverified qualifiers live**
 
 The probe only saw `(Friend Ball)`, `(Quick Ball)`, `(Love Ball)`, `(Poke Ball)`, `(Team Rocket)` and `(Energy Symbol Pattern)` in the first 100 Ascended Heroes products. It never saw a Dusk Ball product. This step costs 13 requests, so run it when the hour has room. Stop and ask the user if the hour is spent.
 
@@ -277,7 +277,7 @@ print(q)
 
 Expected: qualifiers including `Dusk Ball` and `Team Rocket`. If the wording differs (e.g. `Dusk Ball Pattern`), use the observed wording in the `patterns` table in Step 3 and in the test in Step 2. If any qualifier appears that isn't in the table, report it to the user. Do not add it without asking.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 In `TestCardsQualifierAliases`, **delete** these three rows. Pattern products now get an alias, and the new test below covers them:
 
@@ -378,12 +378,12 @@ func TestQuotePattern(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `go test ./internal/source/pokewallet/ -run "TestCardsPatternPrints|TestQuotePattern" -v`
 Expected: FAIL. `Print` is `""` and `Aliases` is `[]` for every pattern row, and `TestQuotePattern` fails with `ErrVariantUnavailable` for the priced cases (`want one of [] ...`).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 In `pokewallet.go`, add to `subtypes`:
 
@@ -481,12 +481,12 @@ In `Cards`, replace the body of the `for _, c := range resp.Cards` loop:
 
 > **Go note:** `if p, base := patternOf(...); p != ...` is an if statement with an initializer. `p` and `base` are scoped to the if/else, the way a C# `is` pattern variable is scoped to its branch. Multiple return values, `(card.Print, string)` here, replace C# `out` parameters or tuples.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `go test ./internal/source/pokewallet/ -v -run "TestCards|TestQuote"` then `go test ./...`
 Expected: all PASS, including the unchanged rows of `TestCardsQualifierAliases` and `TestCardsQualifierMatchingTheCardsOwnNumber`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/source/pokewallet
@@ -505,7 +505,7 @@ git commit -m "pokewallet: tag pattern products with their print and price their
 - Consumes: `card.ParseVariant` → `(Variant, Print, error)`, `SourceCard.Print`, `Print.String` (Task 1)
 - Produces: new reason format `no <print> print at set <id> #<n>; has [<names>]` (Task 4 groups it by the substring `print at set`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `newFake()`, replace the `"24326"` entry with the shapes the provider now produces:
 
@@ -546,12 +546,12 @@ In `TestResolve`, replace the case `"a pattern print gets no alias"` with:
 			card.StatusAmbiguous, "", "", "match"},
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `go test ./internal/resolve/ -run TestResolve -v`
 Expected: FAIL. Nothing filters by print yet, so `poke ball takes its own product` resolves to `pk_pansear` (exact name beats aliases), and `plain row never takes a pattern product` resolves to `pk_simi_pb` by alias. The other `no … print` cases fail on the reason substring.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `Resolve`, take the print:
 
@@ -606,12 +606,12 @@ Replace the candidate loop and the switch that follows it:
 
 > **Go note:** `%s` on `rowPrint` calls its `String()` method, so the plain print reads `standard`. `%q` on a `[]string` quotes each element: `["Pansear" "Panpour"]`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./internal/resolve/ -v` then `go test ./...`
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/resolve
@@ -629,7 +629,7 @@ git commit -m "resolve: match only source products of the row's print"
 **Interfaces:**
 - Consumes: the reason substring `print at set` (Task 3).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In the reasons slice of the grouping test, add a line after the `name mismatch` reason:
 
@@ -643,12 +643,12 @@ In `want`, add:
 		"Pattern print not listed": 1,
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `go test ./internal/site/ -run TestGroups -v`
 Expected: FAIL: `group "Pattern print not listed" = 0, want 1`, and `Other` = 2.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `reasonGroups`, change the first two entries and add one after them. The old `name mismatch` hint ("Mostly cards the source lists only as a pattern print") described the 356 stale rows that the 2026-09-27 re-import resolved, so it is no longer true.
 
@@ -658,12 +658,12 @@ In `reasonGroups`, change the first two entries and add one after them. The old 
 	{"print at set", "Pattern print not listed", "The source has the number, but not in this print"},
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./internal/site/ ./cmd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/site
@@ -680,7 +680,7 @@ git commit -m "site: special-print copy and a group for missing pattern prints"
 **Interfaces:**
 - Consumes: `importCollection`, `priceRun`, `providerOpts`, `quiet` (existing in `package main`), `store.Open`, `(*store.SQLite).History(ctx, source) ([]card.Observation, error)`.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Add `"github.com/jkhaynes/pricewatch/internal/store"` to the imports, then:
 
@@ -771,14 +771,14 @@ func TestPatternPrintsArePricedAsTheirOwnProducts(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `go test ./cmd/pricewatch/ -run TestPatternPrintsArePricedAsTheirOwnProducts -v`
 Expected: PASS. Tasks 1–3 already implement the behaviour, so this is a regression guard, not a red test. To prove it guards something, temporarily comment out the `if c.Print != rowPrint { continue }` block in `resolve.go` and rerun. Expected: FAIL, with import counts showing ambiguous rows. Restore the block and rerun to PASS. Show both outputs.
 
 If `History` has a different signature, or `CardID` isn't the collection key, check `internal/store/read.go:45` and `internal/card/price.go:24` and adapt the test to the real names. Do not change `store`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add cmd/pricewatch/e2e_test.go
@@ -793,7 +793,7 @@ git commit -m "e2e: pattern prints are priced from their own products"
 - Modify: `docs/PRD.md` (section 6 table, section 8 after DD-15, section 13 idea 2)
 - Modify: `README.md:270-271`
 
-- [ ] **Step 1: FR-17**
+- [x] **Step 1: FR-17**
 
 In the section 6 table, after FR-16:
 
@@ -801,7 +801,7 @@ In the section 6 table, after FR-16:
 | FR-17 | Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) as their own source products, never as the plain card (DD-16) | P1 |
 ```
 
-- [ ] **Step 2: DD-16**
+- [x] **Step 2: DD-16**
 
 After DD-15's closing **Scope** paragraph, add:
 
@@ -823,7 +823,7 @@ plain card. The design is in `docs/superpowers/specs/2026-09-27-special-prints-d
   both is ambiguous and reported (DD-5).
 ```
 
-- [ ] **Step 3: Section 13, idea 2**
+- [x] **Step 3: Section 13, idea 2**
 
 At the end of idea 2's text (before idea 3), add:
 
@@ -832,7 +832,7 @@ At the end of idea 2's text (before idea 3), add:
    Cosmos, Prize Pack, stamps and promos remain excluded.
 ```
 
-- [ ] **Step 4: README**
+- [x] **Step 4: README**
 
 Replace the special-prints bullet under "What phase 1 does not do":
 
@@ -842,7 +842,7 @@ Replace the special-prints bullet under "What phase 1 does not do":
   their own products (PRD DD-16).
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run: `gofmt -l . ; go vet ./... ; go test ./...`
 Expected: no gofmt output, vet clean, all tests PASS.
