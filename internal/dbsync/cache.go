@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// rename is os.Rename; tests replace it to make a swap fail.
+var rename = os.Rename
+
 // Cache hands out an open T for a local file, downloading a new copy of the
 // file when it is older than TTL. The file's mtime is its age.
 type Cache[T io.Closer] struct {
@@ -157,9 +160,23 @@ func (c *Cache[T]) swap(ctx context.Context, tmp string, now time.Time) error {
 		closeErr = c.cur.Close()
 		c.opened = false
 	}
-	if err := os.Rename(tmp, c.Path); err != nil {
-		c.err = fmt.Errorf("replace %s: %w", c.Path, err)
-		return errors.Join(closeErr, c.err)
+	if err := rename(tmp, c.Path); err != nil {
+		// The old copy is still in place: serve it, and wait a TTL before the
+		// next download, as after a failed download. retryAt is guarded by
+		// refreshing, which Refresh holds while it calls swap.
+		err = fmt.Errorf("replace %s: %w", c.Path, err)
+		c.retryAt = now.Add(c.TTL)
+		if rmErr := os.Remove(tmp); rmErr != nil {
+			err = errors.Join(err, fmt.Errorf("remove %s: %w", tmp, rmErr))
+		}
+		v, openErr := c.Open(ctx, c.Path)
+		if openErr != nil {
+			c.err = errors.Join(err, fmt.Errorf("open %s: %w", c.Path, openErr))
+			return errors.Join(closeErr, c.err)
+		}
+		c.cur, c.opened = v, true
+		c.stale = fmt.Sprintf("refresh failed, so this is an older copy: %v", err)
+		return errors.Join(closeErr, err)
 	}
 	// Path's mtime is the copy's age, so set it from the clock that judges it.
 	if err := os.Chtimes(c.Path, now, now); err != nil {

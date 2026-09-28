@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,9 +30,33 @@ func TestNewCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// One copy per process: Windows cannot replace a file another process's
+	// server has open (2026-09-28, Claude Desktop and Claude Code at once).
 	dir, _ := os.UserCacheDir()
-	if remote.Path != filepath.Join(dir, "pricewatch", "pricewatch.db") || remote.Fetch == nil {
-		t.Errorf("default: path %q, fetch set: %v", remote.Path, remote.Fetch != nil)
+	want := filepath.Join(dir, "pricewatch", fmt.Sprintf("pricewatch-%d.db", os.Getpid()))
+	if remote.Path != want || remote.Fetch == nil {
+		t.Errorf("default: path %q, fetch set: %v; want %q", remote.Path, remote.Fetch != nil, want)
+	}
+}
+
+// Copies left by servers that exited without cleaning up, and the old shared
+// copy, are removed; this process's copy and anything that isn't a database stay.
+func TestRemoveOtherCopies(t *testing.T) {
+	dir := t.TempDir()
+	ours := filepath.Join(dir, "pricewatch-1.db")
+	for _, name := range []string{"pricewatch-1.db", "pricewatch-2.db", "pricewatch.db", "download-123.db", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeOtherCopies(ours, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var left []string
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if want := []string{"notes.txt", "pricewatch-1.db"}; !slices.Equal(left, want) {
+		t.Errorf("left %q, want %q", left, want)
 	}
 }
 
