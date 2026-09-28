@@ -1,7 +1,7 @@
 # Special prints: ball-pattern, Energy and Rocket reverse holos
 
 **Date:** 2026-09-27
-**Status:** approved in brainstorming, pending spec review
+**Status:** approved; implemented on feat/special-prints
 **PRD:** §13 idea 2 (delivered for these prints), FR-17 and DD-16 (added with this spec)
 
 ## Goal

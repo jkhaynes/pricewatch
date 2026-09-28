@@ -648,8 +648,9 @@ plain card. The design is in `docs/superpowers/specs/2026-09-27-special-prints-d
 
 - **What the source does:** PokéWallet lists each pattern print as a separate product at
   the plain card's number, e.g. `Pansear (Poke Ball Pattern)`. SV sets name it
-  `(… Ball Pattern)`, ME sets `(… Ball)`, and the one price sits under `Holofoil` or
-  `Reverse Holofoil` depending on the era (probe, 2026-09-27).
+  `(… Ball Pattern)`; ME sets use `(… Ball)`, `(Team Rocket)` and `(Energy Symbol Pattern)`,
+  and the one price sits under `Holofoil` or `Reverse Holofoil` depending on the era
+  (probe, 2026-09-27).
 - **`card.Print`:** each row and each source product has a print. The provider derives a
   product's print from its own qualifier table, so source wording never reaches the
   resolver. The resolver only considers products whose print equals the row's.
