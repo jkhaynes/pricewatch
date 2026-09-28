@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -130,6 +131,45 @@ func TestFailedDownloadWaitsATTLBeforeRetrying(t *testing.T) {
 	acquire()
 	if calls != 2 {
 		t.Errorf("after a full TTL: %d fetches, want 2", calls)
+	}
+}
+
+// Windows refuses to rename over a file another process has open (2026-09-28:
+// Claude Desktop's servers held the copy Claude Code's server tried to
+// replace). A failed swap must keep serving the old copy, report it as stale,
+// clean up the download and wait a TTL, never leave the server with nothing.
+func TestFailedSwapKeepsServingTheOldCopy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pricewatch.db")
+	writeAged(t, path, "old", now.Add(-2*time.Hour))
+	denied := errors.New("Access is denied.")
+	rename = func(string, string) error { return denied }
+	t.Cleanup(func() { rename = os.Rename })
+	clock, calls := now, 0
+	c := &Cache[*copyOf]{Path: path, TTL: time.Hour, Open: openFake, Now: func() time.Time { return clock },
+		Fetch: fetchOf("new", nil, &calls)}
+	t.Cleanup(func() { c.Close() })
+
+	v, release, stale, err := c.Acquire(t.Context())
+	if err != nil {
+		t.Fatalf("Acquire: %v; want the old copy", err)
+	}
+	release()
+	if v.body != "old" || !strings.Contains(stale, "Access is denied") {
+		t.Errorf("got %q, stale %q; want the old copy, reported stale with the reason", v.body, stale)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("%d files in the cache dir, want only %s: the failed download must be removed", len(entries), path)
+	}
+
+	clock = now.Add(30 * time.Minute)
+	if _, release, _, err := c.Acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	} else {
+		release()
+	}
+	if calls != 1 {
+		t.Errorf("%d downloads after 30 minutes, want 1: a failed swap waits a TTL like a failed download", calls)
 	}
 }
 
