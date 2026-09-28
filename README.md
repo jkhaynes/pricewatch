@@ -248,7 +248,8 @@ once and Claude can answer questions like "what's my collection worth?", "what m
 week?" or "which cards do I own two of that are worth over $5?".
 
 It downloads `pricewatch.db` from the `db` branch of `pricewatch-data`, keeps it for an hour
-in your user cache directory, and opens it read-only. It needs a fine-grained token with
+in your user cache directory, and opens it read-only. Each running server keeps its own copy,
+so Claude Desktop and Claude Code can both run it. It needs a fine-grained token with
 read-only **Contents** access to that repo:
 
 ```

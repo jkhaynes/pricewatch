@@ -628,7 +628,9 @@ design is in `docs/superpowers/specs/2026-09-26-mcp-server-design.md`.
   `query_only`, so SQLite refuses writes whatever the SQL says.
 - **Data:** it downloads `pricewatch.db` from the `db` branch of `pricewatch-data`
   (DD-13) through the GitHub contents API with a read-only token, caches it for an hour,
-  and falls back to the cached copy with a staleness warning when the download fails.
+  and falls back to the cached copy with a staleness warning when the download, or the
+  swap to the new copy, fails. Each server process keeps its own copy (2026-09-28:
+  Windows cannot replace a file another client's server has open).
 - **Dependency:** `github.com/modelcontextprotocol/go-sdk`, the official Go SDK. It is
   not on the pre-approved list. Justification: it is the maintained reference
   implementation of the protocol, and its generic tool registration derives input
