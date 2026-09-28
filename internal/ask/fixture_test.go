@@ -40,7 +40,7 @@ func newStore(t *testing.T, rows []card.Row, prices []obs) *store.SQLite {
 		t.Fatal(err)
 	}
 	for _, r := range rows {
-		v, err := card.ParseVariant(r.Variant)
+		v, _, err := card.ParseVariant(r.Variant)
 		if err != nil {
 			t.Fatal(err)
 		}

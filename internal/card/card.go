@@ -44,27 +44,69 @@ const (
 	VariantReverseHolo      Variant = "reverse"
 	VariantFirstEdition     Variant = "1st-edition"
 	VariantFirstEditionHolo Variant = "1st-edition-holo"
+	// VariantPattern is a pattern print's own foil, whichever sub-type the
+	// source files it under. Only pattern prints use it.
+	VariantPattern Variant = "pattern"
 )
 
-// variantLabels maps normalised TCG Collector labels to Variants (labels from
-// the real export, Task 0). Anything absent is excluded on purpose: ball-pattern
-// and Energy reverse holos, Cosmos, Prize Pack, stamps and promos are phase 2.
-var variantLabels = map[string]Variant{
-	"normal":           VariantNormal,
-	"non-holo":         VariantNormal,
-	"holo":             VariantHolo,
-	"normal holo":      VariantHolo,
-	"reverse holo":     VariantReverseHolo,
-	"1st edition":      VariantFirstEdition,
-	"1st edition holo": VariantFirstEditionHolo,
+// Print says which physical print a row or source product is. Most cards have
+// one, PrintStandard, carrying Normal, Holo and Reverse Holo prices. Pattern
+// reverse holos (Poké Ball, Energy, ...) are separate products at the source,
+// at the same number as the plain card, so they need their own identity.
+type Print string
+
+const (
+	PrintStandard   Print = ""
+	PrintPokeBall   Print = "pokeball"
+	PrintMasterBall Print = "masterball"
+	PrintFriendBall Print = "friendball"
+	PrintQuickBall  Print = "quickball"
+	PrintLoveBall   Print = "loveball"
+	PrintDuskBall   Print = "duskball"
+	PrintRocket     Print = "rocket"
+	PrintEnergy     Print = "energy"
+)
+
+func (p Print) String() string {
+	if p == PrintStandard {
+		return "standard"
+	}
+	return string(p)
 }
 
-func ParseVariant(label string) (Variant, error) {
-	v, ok := variantLabels[Normalize(label)]
+type finish struct {
+	variant Variant
+	print   Print
+}
+
+// variantLabels maps normalised TCG Collector labels to what they mean (labels
+// from the real export, Task 0 of phase 1). Anything absent is excluded on
+// purpose: Cosmos, Prize Pack, stamps and promos.
+var variantLabels = map[string]finish{
+	"normal":           {VariantNormal, PrintStandard},
+	"non-holo":         {VariantNormal, PrintStandard},
+	"holo":             {VariantHolo, PrintStandard},
+	"normal holo":      {VariantHolo, PrintStandard},
+	"reverse holo":     {VariantReverseHolo, PrintStandard},
+	"1st edition":      {VariantFirstEdition, PrintStandard},
+	"1st edition holo": {VariantFirstEditionHolo, PrintStandard},
+
+	"poké ball reverse holo":   {VariantPattern, PrintPokeBall},
+	"master ball reverse holo": {VariantPattern, PrintMasterBall},
+	"friend ball reverse holo": {VariantPattern, PrintFriendBall},
+	"quick ball reverse holo":  {VariantPattern, PrintQuickBall},
+	"love ball reverse holo":   {VariantPattern, PrintLoveBall},
+	"dusk ball reverse holo":   {VariantPattern, PrintDuskBall},
+	"rocket reverse holo":      {VariantPattern, PrintRocket},
+	"energy reverse holo":      {VariantPattern, PrintEnergy},
+}
+
+func ParseVariant(label string) (Variant, Print, error) {
+	f, ok := variantLabels[Normalize(label)]
 	if !ok {
-		return "", fmt.Errorf("%w: %q", ErrUnsupportedVariant, label)
+		return "", PrintStandard, fmt.Errorf("%w: %q", ErrUnsupportedVariant, label)
 	}
-	return v, nil
+	return f.variant, f.print, nil
 }
 
 type Status string
@@ -99,9 +141,12 @@ type SourceSet struct {
 // the same number matches Name exactly. Providers add them for qualifiers that
 // name the card's own print ("Whismur (117)" -> "Whismur"), never for ones that
 // mark a different print at the same number.
+// Print is the product's print. A pattern product ("Pansear (Poke Ball
+// Pattern)") has its pattern's Print and its bare name in Aliases.
 type SourceCard struct {
 	ID      string
 	Number  string
 	Name    string
+	Print   Print
 	Aliases []string
 }

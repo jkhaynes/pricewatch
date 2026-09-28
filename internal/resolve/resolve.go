@@ -72,7 +72,7 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 	if !english[card.Normalize(row.Language)] {
 		return fail(card.StatusUnmatched, "unsupported language %q", row.Language)
 	}
-	variant, err := card.ParseVariant(row.Variant)
+	variant, _, err := card.ParseVariant(row.Variant)
 	if err != nil {
 		return fail(card.StatusUnmatched, "%v", err)
 	}
