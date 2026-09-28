@@ -30,6 +30,7 @@ var subtypes = map[card.Variant][]string{
 	card.VariantReverseHolo:      {"Reverse Holofoil"},
 	card.VariantFirstEdition:     {"1st Edition"},
 	card.VariantFirstEditionHolo: {"1st Edition Holofoil"},
+	card.VariantPattern:          {"Holofoil", "Reverse Holofoil"}, // one or the other by era (probe, 2026-09-27)
 }
 
 func Config(baseURL, apiKey string, q source.Quota, timeout time.Duration) source.Config {
@@ -125,13 +126,18 @@ func (p *Provider) Cards(ctx context.Context, setID string) ([]card.SourceCard, 
 		for _, c := range resp.Cards {
 			number := c.CardInfo.CardNumber
 			local, _, _ := strings.Cut(number, "/")
-			name := strings.TrimSuffix(c.CardInfo.Name, " - "+number)
-			out = append(out, card.SourceCard{
-				ID:      c.ID,
-				Number:  local,
-				Name:    name,
-				Aliases: aliases(name, local),
-			})
+			sc := card.SourceCard{ID: c.ID, Number: local}
+			if p, base := patternOf(c.CardInfo.Name); p != card.PrintStandard {
+				// Keep the full name for reports; match by the bare name.
+				sc.Name, sc.Print = c.CardInfo.Name, p
+				if bare, ok := bareName(strings.TrimSuffix(base, " - "+number), local); ok {
+					sc.Aliases = []string{bare}
+				}
+			} else {
+				sc.Name = strings.TrimSuffix(c.CardInfo.Name, " - "+number)
+				sc.Aliases = aliases(sc.Name, local)
+			}
+			out = append(out, sc)
 		}
 		if page >= resp.Pagination.TotalPages {
 			return out, nil
@@ -161,28 +167,63 @@ var ownPrint = map[string]bool{
 	"holo common":          true,
 }
 
-// aliases strips trailing qualifiers one at a time, as in
+// patterns maps PokeWallet's qualifiers for pattern reverse holos to prints,
+// in both naming eras seen live (2026-09-27): SV sets say "(Poke Ball
+// Pattern)", ME sets "(Poke Ball)". An allow-list like ownPrint: an unknown
+// qualifier stays a standard product with no alias, so it never matches.
+var patterns = map[string]card.Print{
+	"poke ball pattern":     card.PrintPokeBall,
+	"poke ball":             card.PrintPokeBall,
+	"master ball pattern":   card.PrintMasterBall,
+	"friend ball":           card.PrintFriendBall,
+	"quick ball":            card.PrintQuickBall,
+	"love ball":             card.PrintLoveBall,
+	"dusk ball":             card.PrintDuskBall,
+	"team rocket":           card.PrintRocket,
+	"energy symbol pattern": card.PrintEnergy,
+}
+
+// patternOf splits a pattern product's last qualifier off its name:
+// "Pansear (Poke Ball Pattern)" is PrintPokeBall with base "Pansear".
+// Anything else is PrintStandard with the name unchanged.
+func patternOf(name string) (card.Print, string) {
+	m := trailingQualifier.FindStringSubmatch(name)
+	if m == nil {
+		return card.PrintStandard, name
+	}
+	p, ok := patterns[strings.ToLower(m[2])]
+	if !ok {
+		return card.PrintStandard, name
+	}
+	return p, m[1]
+}
+
+// bareName strips trailing qualifiers one at a time, as in
 // "Gardevoir & Sylveon GX (205) (Alternate Full Art)". Every one must be
 // allowed: a number, the card's own number with its prefix ("(SV66)" at
 // SV66/SV94), or an ownPrint qualifier. A single qualifier marking a different
-// print means no alias at all.
-func aliases(name, number string) []string {
+// print means the name is not this card's: ok is false.
+func bareName(name, number string) (string, bool) {
 	base := name
 	for {
 		m := trailingQualifier.FindStringSubmatch(base)
 		if m == nil {
-			break
+			return base, true
 		}
 		q := strings.ToLower(m[2])
 		if !digitsOnly.MatchString(q) && !strings.EqualFold(q, number) && !ownPrint[q] {
-			return nil
+			return "", false
 		}
 		base = m[1]
 	}
-	if base == name {
-		return nil
+}
+
+// aliases gives a standard product its bare name, when it differs.
+func aliases(name, number string) []string {
+	if base, ok := bareName(name, number); ok && base != name {
+		return []string{base}
 	}
-	return []string{base}
+	return nil
 }
 
 func (p *Provider) Quote(ctx context.Context, sourceCardID string, variants []card.Variant) ([]card.Quote, error) {
