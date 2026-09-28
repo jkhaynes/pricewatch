@@ -18,6 +18,7 @@ import (
 	"github.com/jkhaynes/pricewatch/internal/card"
 	"github.com/jkhaynes/pricewatch/internal/pipeline"
 	"github.com/jkhaynes/pricewatch/internal/source"
+	"github.com/jkhaynes/pricewatch/internal/store"
 )
 
 // fakePokeWallet serves a tiny catalog. Prices and a 429 switch can change between runs.
@@ -278,5 +279,93 @@ func TestSiteIsBuiltFromTheDatabase(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(svg), "<svg") || !strings.Contains(string(svg), "cards checked (24h)") {
 		t.Errorf("card.svg does not look like the profile card:\n%s", svg)
+	}
+}
+
+// The silent failure CLAUDE.md warns about: one print priced as another. A
+// Poké Ball row and a Master Ball row sit beside the plain card's Normal and
+// Reverse Holo rows; each must be priced from its own product.
+func TestPatternPrintsArePricedAsTheirOwnProducts(t *testing.T) {
+	t.Setenv("POKEWALLET_API_KEY", "test-key")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sets":
+			io.WriteString(w, `{"data":[{"name":"SV: White Flare","set_code":"WHT","set_id":"24326","language":"eng"}]}`)
+		case "/sets/24326":
+			io.WriteString(w, `{"cards":[
+				{"id":"pk_plain","card_info":{"name":"Pansear","card_number":"014/086"}},
+				{"id":"pk_pb","card_info":{"name":"Pansear (Poke Ball Pattern)","card_number":"014/086"}},
+				{"id":"pk_mb","card_info":{"name":"Pansear (Master Ball Pattern)","card_number":"014/086"}}],
+				"pagination":{"page":1,"total_pages":1}}`)
+		case "/cards/pk_plain":
+			io.WriteString(w, `{"tcgplayer":{"prices":[{"sub_type_name":"Normal","market_price":0.05},{"sub_type_name":"Reverse Holofoil","market_price":0.2}]}}`)
+		case "/cards/pk_pb":
+			io.WriteString(w, `{"tcgplayer":{"prices":[{"sub_type_name":"Holofoil","market_price":0.3}]}}`)
+		case "/cards/pk_mb":
+			io.WriteString(w, `{"tcgplayer":{"prices":[{"sub_type_name":"Holofoil","market_price":1.5}]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	csvPath, db := filepath.Join(dir, "export.csv"), filepath.Join(dir, "pw.db")
+	body := "TCG region,Card name,Card number,Card number sorting order,Expansion,Rarity,Card variant,Card language,Card condition,Quantity,Price,Total price,Note\n" +
+		"International,Pansear,014/086,14,White Flare,Common,Normal,English,Mint,1,,,\n" +
+		"International,Pansear,014/086,14,White Flare,Common,Reverse Holo,English,Mint,1,,,\n" +
+		"International,Pansear,014/086,14,White Flare,Common,Poké Ball Reverse Holo,English,Mint,1,,,\n" +
+		"International,Pansear,014/086,14,White Flare,Common,Master Ball Reverse Holo,English,Mint,1,,,\n"
+	if err := os.WriteFile(csvPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prov := providerOpts{BaseURL: srv.URL, Timeout: time.Second, Limits: &source.Limits{}}
+
+	var out bytes.Buffer
+	counts, err := importCollection(t.Context(), importOpts{DB: db, CSV: csvPath, Source: "pokewallet", Provider: prov}, &out, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[card.StatusResolved] != 4 {
+		t.Fatalf("import counts = %v\n%s", counts, out.String())
+	}
+
+	sum, err := priceRun(t.Context(), nil, runOpts{DB: db, Source: "pokewallet", Budget: 10, Workers: 2,
+		Provider: prov, Now: time.Now}, &out, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Three products, one request each; the plain one answers two rows.
+	if sum.Requests != 3 || sum.OK != 4 {
+		t.Fatalf("run = %+v\n%s", sum, out.String())
+	}
+
+	st, err := store.Open(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	obs, err := st.History(t.Context(), "pokewallet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, o := range obs {
+		if o.Market == nil {
+			t.Fatalf("%s: observation has no market price", o.CardID)
+		}
+		got[o.CardID] = *o.Market
+	}
+	const k = "international|white flare|014/086|"
+	want := map[string]float64{
+		k + "normal|english":                   0.05,
+		k + "reverse holo|english":             0.2,
+		k + "poké ball reverse holo|english":   0.3,
+		k + "master ball reverse holo|english": 1.5,
+	}
+	for key, w := range want {
+		if got[key] != w {
+			t.Errorf("%s = %v, want %v", key, got[key], w)
+		}
 	}
 }

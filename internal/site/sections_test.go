@@ -72,6 +72,7 @@ func TestGroups(t *testing.T) {
 		`unsupported variant: "Poké Ball Reverse Holo"`,
 		`unsupported variant: "Cosmos Holo"`,
 		`name mismatch: collection "Pikachu", set 3020 #TG05 has ["Pikachu (Pattern)"]`,
+		`no pokeball print at set 24326 #016; has ["Panpour"]`,
 		`number 999 not in set 1393`,
 		`GET /cards/pk_x: card not found at source`,
 		`holo: variant not priced at source`,
@@ -93,7 +94,7 @@ func TestGroups(t *testing.T) {
 		order = append(order, g.Label)
 	}
 	want := map[string]int{
-		"Special prints not priced yet": 2, "Name differs at the source": 1, "Number not in the set": 1,
+		"Special prints not priced yet": 2, "Name differs at the source": 1, "Print not listed at the number": 1, "Number not in the set": 1,
 		"Gone from the source": 1, "Print not priced at the source": 1, "Unknown expansion": 1,
 		"Matches more than one set": 1, "More than one price for the print": 1,
 		"More than one card matches": 1, "Not English": 1, "Other": 1,

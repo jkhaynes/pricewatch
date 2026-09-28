@@ -108,8 +108,6 @@ func TestCardsQualifierAliases(t *testing.T) {
 		{"Zacian V (Shiny)", []string{"Zacian V"}},
 		{"Mewtwo GX (Secret Shining)", []string{"Mewtwo GX"}},
 		{"Sylveon VMAX (Alternate Art Secret)", []string{"Sylveon VMAX"}},
-		{"Pansear (Poke Ball Pattern)", nil},
-		{"Sewaddle (Master Ball Pattern)", nil},
 		{"Charizard (Black Dot Error)", nil},
 		{"N's Zekrom - 031 (Pokemon Center Exclusive)", nil},
 		{"Feraligatr - 213 (Illustration Contest 2024)", nil},
@@ -118,7 +116,6 @@ func TestCardsQualifierAliases(t *testing.T) {
 		// Several trailing qualifiers: strip them all, but only if every one is allowed.
 		{"Gardevoir & Sylveon GX (205) (Alternate Full Art)", []string{"Gardevoir & Sylveon GX"}},
 		{"Pikachu (Poke Ball Pattern) (Secret)", nil},
-		{"Pikachu (Secret) (Poke Ball Pattern)", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,6 +132,90 @@ func TestCardsQualifierAliases(t *testing.T) {
 			}
 			if cards[0].Name != tt.name {
 				t.Errorf("Name = %q; the full name must be kept for exact matching and reports", cards[0].Name)
+			}
+		})
+	}
+}
+
+// Pattern reverse holos are separate products at the same number as the plain
+// card. Names from the live listings (probe, 2026-09-27): SV sets say
+// "(Poke Ball Pattern)", ME sets say "(Poke Ball)", and ME names may put the
+// number suffix before the qualifier.
+func TestCardsPatternPrints(t *testing.T) {
+	tests := []struct {
+		name, number string
+		wantPrint    card.Print
+		wantAliases  []string
+	}{
+		{"Exeggcute", "001/131", card.PrintStandard, nil},
+		{"Exeggcute (Poke Ball Pattern)", "001/131", card.PrintPokeBall, []string{"Exeggcute"}},
+		{"Exeggcute (Master Ball Pattern)", "001/131", card.PrintMasterBall, []string{"Exeggcute"}},
+		{"Pansage (Master Ball Pattern)", "004/086", card.PrintMasterBall, []string{"Pansage"}},
+		{"Erika's Oddish (Poke Ball)", "001/217", card.PrintPokeBall, []string{"Erika's Oddish"}},
+		{"Erika's Tangela - 007/217 (Poke Ball)", "007/217", card.PrintPokeBall, []string{"Erika's Tangela"}},
+		{"Chikorita (Friend Ball)", "008/217", card.PrintFriendBall, []string{"Chikorita"}},
+		{"Chikorita (Quick Ball)", "008/217", card.PrintQuickBall, []string{"Chikorita"}},
+		{"Chikorita (Love Ball)", "008/217", card.PrintLoveBall, []string{"Chikorita"}},
+		{"Chikorita (Dusk Ball)", "008/217", card.PrintDuskBall, []string{"Chikorita"}},
+		{"Chikorita (Energy Symbol Pattern)", "008/217", card.PrintEnergy, []string{"Chikorita"}},
+		{"Team Rocket's Ekans (Team Rocket)", "050/217", card.PrintRocket, []string{"Team Rocket's Ekans"}},
+		// A pattern over an own-print qualifier: both are stripped.
+		{"Pikachu (Secret) (Poke Ball Pattern)", "117/168", card.PrintPokeBall, []string{"Pikachu"}},
+		// A pattern over a different print: the pattern is known, the base is not
+		// this card, so no alias and it can never match.
+		{"Charizard (Black Dot Error) (Poke Ball Pattern)", "004/102", card.PrintPokeBall, nil},
+		// Not a pattern: an unknown qualifier stays a standard, unmatchable product.
+		{"Charizard (Black Dot Error)", "004/102", card.PrintStandard, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"cards":      []any{map[string]any{"id": "pk_x", "card_info": map[string]any{"name": tt.name, "card_number": tt.number}}},
+				"pagination": map[string]any{"page": 1, "total_pages": 1},
+			})
+			cards, err := New(fakeGetter{"/sets/s?page=1&limit=50": string(body)}).Cards(t.Context(), "s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := cards[0]
+			if c.Print != tt.wantPrint || !slices.Equal(c.Aliases, tt.wantAliases) {
+				t.Errorf("Print, Aliases = %q, %q; want %q, %q", c.Print, c.Aliases, tt.wantPrint, tt.wantAliases)
+			}
+			if c.Print != card.PrintStandard && c.Name != tt.name {
+				t.Errorf("Name = %q; a pattern product keeps its full name for reports", c.Name)
+			}
+		})
+	}
+}
+
+// A pattern product carries one price, under Holofoil in SV sets and Reverse
+// Holofoil in ME sets (probe, 2026-09-27). Both at once would be a guess.
+func TestQuotePattern(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       any // float64 market, or error sentinel
+	}{
+		{"SV pattern: Holofoil", `{"tcgplayer":{"prices":[{"sub_type_name":"Holofoil","market_price":0.32}]}}`, 0.32},
+		{"ME pattern: Reverse Holofoil", `{"tcgplayer":{"prices":[{"sub_type_name":"Reverse Holofoil","market_price":0.24}]}}`, 0.24},
+		{"both is ambiguous", `{"tcgplayer":{"prices":[
+			{"sub_type_name":"Holofoil","market_price":0.3},{"sub_type_name":"Reverse Holofoil","market_price":0.2}]}}`, card.ErrVariantAmbiguous},
+		{"neither is unavailable", `{"tcgplayer":{"prices":[{"sub_type_name":"Normal","market_price":0.05}]}}`, card.ErrVariantUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			qs, err := New(fakeGetter{"/cards/pk_x": tt.body}).Quote(t.Context(), "pk_x", []card.Variant{card.VariantPattern})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch w := tt.want.(type) {
+			case float64:
+				if qs[0].Err != nil || qs[0].Price.Market == nil || *qs[0].Price.Market != w {
+					t.Errorf("quote = %+v, want market %v", qs[0], w)
+				}
+			case error:
+				if !errors.Is(qs[0].Err, w) {
+					t.Errorf("err = %v, want %v", qs[0].Err, w)
+				}
 			}
 		})
 	}

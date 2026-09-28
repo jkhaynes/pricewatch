@@ -59,9 +59,20 @@ func newFake() *fakeCatalog {
 				{ID: "pk_fa", Number: "150", Name: "Guzma (Full Art)", Aliases: []string{"Guzma"}},
 				{ID: "pk_sr", Number: "150", Name: "Guzma (Secret)", Aliases: []string{"Guzma"}},
 			},
-			"24326": {{ID: "pk_pat", Number: "014", Name: "Pansear (Poke Ball Pattern)"}},
-			"2754":  {{ID: "pk_sf12", Number: "012", Name: "Rillaboom V"}},
-			"2781":  {{ID: "pk_sv86", Number: "SV086", Name: "Galarian Meowth"}},
+			// White Flare #014 as PokeWallet lists it: the plain card and two
+			// pattern products (live, 2026-09-27). #015 has only a pattern
+			// product; #016 only the plain card.
+			"24326": {
+				{ID: "pk_pansear", Number: "014", Name: "Pansear"},
+				{ID: "pk_pb", Number: "014", Name: "Pansear (Poke Ball Pattern)", Print: card.PrintPokeBall, Aliases: []string{"Pansear"}},
+				{ID: "pk_mb", Number: "014", Name: "Pansear (Master Ball Pattern)", Print: card.PrintMasterBall, Aliases: []string{"Pansear"}},
+				{ID: "pk_simi_pb", Number: "015", Name: "Simisear (Poke Ball Pattern)", Print: card.PrintPokeBall, Aliases: []string{"Simisear"}},
+				{ID: "pk_panpour", Number: "016", Name: "Panpour"},
+				{ID: "pk_tw1", Number: "017", Name: "Twin (Poke Ball Pattern)", Print: card.PrintPokeBall, Aliases: []string{"Twin"}},
+				{ID: "pk_tw2", Number: "017", Name: "Twin (Poke Ball)", Print: card.PrintPokeBall, Aliases: []string{"Twin"}},
+			},
+			"2754": {{ID: "pk_sf12", Number: "012", Name: "Rillaboom V"}},
+			"2781": {{ID: "pk_sv86", Number: "SV086", Name: "Galarian Meowth"}},
 		},
 		cardCalls: map[string]int{},
 	}
@@ -115,8 +126,23 @@ func TestResolve(t *testing.T) {
 			card.StatusResolved, "pk_zard", card.VariantHolo, ""},
 		{"two alias matches are ambiguous", r("Guzma", "Celestial Storm", "150/168", "Normal Holo", "English"), nil,
 			card.StatusAmbiguous, "", "", "match"},
-		{"a pattern print gets no alias", r("Pansear", "White Flare", "014/086", "Normal", "English"), nil,
-			card.StatusUnmatched, "", "", "name mismatch"},
+		// Pattern prints: a separate product at the same number, matched only by print.
+		{"plain row takes the plain product", r("Pansear", "White Flare", "014/086", "Normal", "English"), nil,
+			card.StatusResolved, "pk_pansear", card.VariantNormal, ""},
+		{"reverse holo takes the plain product", r("Pansear", "White Flare", "014/086", "Reverse Holo", "English"), nil,
+			card.StatusResolved, "pk_pansear", card.VariantReverseHolo, ""},
+		{"poke ball takes its own product", r("Pansear", "White Flare", "014/086", "Poké Ball Reverse Holo", "English"), nil,
+			card.StatusResolved, "pk_pb", card.VariantPattern, ""},
+		{"master ball takes its own product", r("Pansear", "White Flare", "014/086", "Master Ball Reverse Holo", "English"), nil,
+			card.StatusResolved, "pk_mb", card.VariantPattern, ""},
+		{"plain row never takes a pattern product", r("Simisear", "White Flare", "015/086", "Normal", "English"), nil,
+			card.StatusUnmatched, "", "", `no standard print at set 24326 #015; has ["Simisear (Poke Ball Pattern)"]`},
+		{"pattern row never takes the plain product", r("Panpour", "White Flare", "016/086", "Poké Ball Reverse Holo", "English"), nil,
+			card.StatusUnmatched, "", "", `no pokeball print at set 24326 #016; has ["Panpour"]`},
+		{"missing pattern lists every product at the number", r("Pansear", "White Flare", "014/086", "Energy Reverse Holo", "English"), nil,
+			card.StatusUnmatched, "", "", `no energy print at set 24326 #014; has ["Pansear" "Pansear (Poke Ball Pattern)" "Pansear (Master Ball Pattern)"]`},
+		{"two products of one print are ambiguous", r("Twin", "White Flare", "017/086", "Poké Ball Reverse Holo", "English"), nil,
+			card.StatusAmbiguous, "", "", "match"},
 
 		// Subsets: an override keyed on expansion plus number prefix routes to the subset's set.
 		{"prefix override routes a subset card", r("Galarian Meowth", "Shining Fates", "SV086/SV122", "Normal Holo", "English"),

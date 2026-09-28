@@ -30,7 +30,7 @@ func seed(t *testing.T, s *SQLite, specs ...spec) []string {
 	}
 	var keys []string
 	for i, r := range rows {
-		v, _ := card.ParseVariant(specs[i].variant)
+		v, _, _ := card.ParseVariant(specs[i].variant)
 		m := card.Mapping{Key: r.Key(), Source: "pw", SourceCardID: specs[i].sourceID, Variant: v, Status: card.StatusResolved}
 		if err := s.PutMapping(ctx, m); err != nil {
 			t.Fatal(err)
@@ -138,7 +138,7 @@ func TestCandidatesGroupRowsAndSummariseThem(t *testing.T) {
 	}
 	ids := []string{"pk_A", "pk_A", "pk_B", "pk_C"}
 	for i, r := range rows {
-		v, _ := card.ParseVariant(r.Variant)
+		v, _, _ := card.ParseVariant(r.Variant)
 		if err := s.PutMapping(ctx, card.Mapping{Key: r.Key(), Source: "pw", SourceCardID: ids[i], Variant: v, Status: card.StatusResolved}); err != nil {
 			t.Fatal(err)
 		}

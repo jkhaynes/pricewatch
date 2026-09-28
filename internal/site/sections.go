@@ -100,8 +100,9 @@ func Cover(listings []card.Listing, hist map[string]Series) Coverage {
 // first matching substring wins; the substrings come from the resolver's
 // messages and card's error sentinels.
 var reasonGroups = []struct{ match, label, hint string }{
-	{card.ErrUnsupportedVariant.Error(), "Special prints not priced yet", "Poké Ball and Energy reverse holos, Cosmos, Prize Pack, stamps"},
-	{"name mismatch", "Name differs at the source", "Mostly cards the source lists only as a pattern print"},
+	{card.ErrUnsupportedVariant.Error(), "Special prints not priced yet", "Cosmos, Prize Pack, stamps and promos"},
+	{"name mismatch", "Name differs at the source", "Spelling or formatting differs between the export and the source"},
+	{"print at set", "Print not listed at the number", "The source has the number, but not in this print"},
 	{"not in set", "Number not in the set", "The set exists; the card number doesn't"},
 	{card.ErrNotFound.Error(), "Gone from the source", "Found once, now returns not found"},
 	{card.ErrVariantUnavailable.Error(), "Print not priced at the source", "The card exists, but not in this print"},

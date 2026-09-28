@@ -29,36 +29,60 @@ func TestRowKey(t *testing.T) {
 
 func TestParseVariant(t *testing.T) {
 	tests := []struct {
-		label   string
-		want    Variant
-		wantErr error
+		label     string
+		want      Variant
+		wantPrint Print
+		wantErr   error
 	}{
-		{"Normal", VariantNormal, nil},
-		{"Non-holo", VariantNormal, nil},
-		{"Holo", VariantHolo, nil},
-		{"Normal Holo", VariantHolo, nil},
-		{"Reverse Holo", VariantReverseHolo, nil},
-		{" reverse holo ", VariantReverseHolo, nil},
-		{"1st Edition", VariantFirstEdition, nil},
-		{"1st Edition Holo", VariantFirstEditionHolo, nil},
-		// Real labels from the export that phase 1 excludes on purpose.
-		{"Poké Ball Reverse Holo", "", ErrUnsupportedVariant},
-		{"Master Ball Reverse Holo", "", ErrUnsupportedVariant},
-		{"Energy Reverse Holo", "", ErrUnsupportedVariant},
-		{"Cosmos Holo", "", ErrUnsupportedVariant},
-		{"Play! Pokémon Prize Pack, Non-holo", "", ErrUnsupportedVariant},
-		{"Jumbo Size", "", ErrUnsupportedVariant},
-		{"", "", ErrUnsupportedVariant},
+		{"Normal", VariantNormal, PrintStandard, nil},
+		{"Non-holo", VariantNormal, PrintStandard, nil},
+		{"Holo", VariantHolo, PrintStandard, nil},
+		{"Normal Holo", VariantHolo, PrintStandard, nil},
+		{"Reverse Holo", VariantReverseHolo, PrintStandard, nil},
+		{" reverse holo ", VariantReverseHolo, PrintStandard, nil},
+		{"1st Edition", VariantFirstEdition, PrintStandard, nil},
+		{"1st Edition Holo", VariantFirstEditionHolo, PrintStandard, nil},
+		// Pattern reverse holos: a separate product at the source, priced as its own foil.
+		{"Poké Ball Reverse Holo", VariantPattern, PrintPokeBall, nil},
+		{"Master Ball Reverse Holo", VariantPattern, PrintMasterBall, nil},
+		{"Friend Ball Reverse Holo", VariantPattern, PrintFriendBall, nil},
+		{"Quick Ball Reverse Holo", VariantPattern, PrintQuickBall, nil},
+		{"Love Ball Reverse Holo", VariantPattern, PrintLoveBall, nil},
+		{"Dusk Ball Reverse Holo", VariantPattern, PrintDuskBall, nil},
+		{"Rocket Reverse Holo", VariantPattern, PrintRocket, nil},
+		{"Energy Reverse Holo", VariantPattern, PrintEnergy, nil},
+		// Real labels from the export that are still excluded on purpose.
+		{"Cosmos Holo", "", PrintStandard, ErrUnsupportedVariant},
+		{"Play! Pokémon Prize Pack, Non-holo", "", PrintStandard, ErrUnsupportedVariant},
+		{"Jumbo Size", "", PrintStandard, ErrUnsupportedVariant},
+		{"", "", PrintStandard, ErrUnsupportedVariant},
 	}
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
-			got, err := ParseVariant(tt.label)
+			got, gotPrint, err := ParseVariant(tt.label)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
+			if got != tt.want || gotPrint != tt.wantPrint {
+				t.Errorf("got (%q, %q), want (%q, %q)", got, gotPrint, tt.want, tt.wantPrint)
 			}
 		})
+	}
+}
+
+// Print's zero value is the plain card, which reads badly in a reason ("no  print").
+func TestPrintString(t *testing.T) {
+	tests := []struct {
+		p    Print
+		want string
+	}{
+		{PrintStandard, "standard"},
+		{PrintPokeBall, "pokeball"},
+		{PrintEnergy, "energy"},
+	}
+	for _, tt := range tests {
+		if got := tt.p.String(); got != tt.want {
+			t.Errorf("%q.String() = %q, want %q", string(tt.p), got, tt.want)
+		}
 	}
 }
