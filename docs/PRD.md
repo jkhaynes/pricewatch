@@ -670,7 +670,9 @@ and `(30th Celebration)` qualifiers and priced at the product's only price. The 
 - **The inference:** when a promo number *is* the prerelease or anniversary card,
   PokéWallet lists it unlabelled (`Ampharos - 075`, `Bulbasaur - 037`) and labels only the
   staff print. So in a set whose TCG Collector name ends in "Promos", a Prerelease or
-  30th Anniversary row with no labelled product at its number takes the plain product.
+  30th Anniversary row with no labelled product at its number takes the plain product,
+  provided it is the only unlabelled product at that number (a label pricewatch cannot
+  read blocks the rule).
 - **Where it does not apply:** main sets, where the plain product is the ordinary card
   (Destined Rivals #087 stays `no prerelease print`), and Staff or World Championships
   rows, which are always labelled.

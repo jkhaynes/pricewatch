@@ -195,7 +195,10 @@ var worlds = regexp.MustCompile(`^world championships? \d{4}$`)
 // printOf reads a product's print from its trailing qualifiers and returns the
 // name without them: "Ceruledge (Prerelease) [Staff]" is PrintPrereleaseStaff
 // with base "Ceruledge". Anything unrecognised is PrintStandard with the name
-// unchanged, so it never matches a pattern or stamped row.
+// unchanged, so it never matches a pattern or stamped row. A staff marker over
+// an unrecognised qualifier, such as "Slowbro - 083 (Pitch Black Stamped)
+// [Staff]", instead gives PrintPrereleaseStaff with the qualifier still in the
+// name: bareName then refuses it an alias, so it still never matches.
 func printOf(name string) (card.Print, string) {
 	base, staff := name, false
 	if loc := staffMarker.FindStringIndex(base); loc != nil {

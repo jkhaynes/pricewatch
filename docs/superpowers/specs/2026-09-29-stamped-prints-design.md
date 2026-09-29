@@ -70,12 +70,16 @@ Listings of ME Promos (24451), SV Promos (22872) and Destined Rivals (24269):
 ### `resolve`: the promo-set rule (DD-17)
 
 When no product at the number carries the row's print, and the row's print is Prerelease
-or Anniversary, and the row's expansion ends in `Promos`, the resolver matches again
-against the standard products at the number. Name and alias matching are unchanged: one
-match resolves (variant `stamped`), several are ambiguous, none is a name mismatch.
+or Anniversary, and the row's expansion ends in `Promos`, and exactly one standard product
+sits at that number, the resolver matches again against that standard product. Name and
+alias matching are unchanged: one match resolves (variant `stamped`), several are
+ambiguous, none is a name mismatch.
 
 Why it is safe there and only there: in a promo set each number is its own release, so a
-prerelease-only promo such as Ampharos #075 is listed unlabelled. In a main set the
+prerelease-only promo such as Ampharos #075 is listed unlabelled. `printOf` cannot tell
+"nothing labelled" from "labelled in a way it doesn't recognise" -- both come back as
+PrintStandard -- so the rule takes the plain product, provided it is the only unlabelled
+product at that number (a label pricewatch cannot read blocks the rule). In a main set the
 unlabelled product is the ordinary card: Destined Rivals #087 must still report
 `no prerelease print`. Staff and World Championships never fall back; they are always
 labelled.
