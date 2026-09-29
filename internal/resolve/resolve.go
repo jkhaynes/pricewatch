@@ -62,6 +62,13 @@ func numberPrefix(local string) string {
 
 var english = map[string]bool{"english": true, "en": true}
 
+// fallsBackInPromoSets lists the prints a promo set may leave unlabelled. A
+// prerelease-only or anniversary-only promo number is listed as the plain
+// product (Ampharos #075, Bulbasaur #037; probe 2026-09-29), so in a promo set,
+// and only there, the plain product is taken as that print (DD-17). In a main
+// set the plain product is the ordinary card.
+var fallsBackInPromoSets = map[card.Print]bool{card.PrintPrerelease: true, card.PrintAnniversary: true}
+
 func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, error) {
 	m := card.Mapping{Key: row.Key(), Source: r.source}
 	fail := func(st card.Status, format string, args ...any) (card.Mapping, error) {
@@ -95,31 +102,18 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 	if err != nil {
 		return card.Mapping{}, err
 	}
-	var atNumber []string // every product at the number, of any print, for reasons
-	var byNumber, byName, byAlias []card.SourceCard
 	want := normName(row.Name)
+	var atNumber []string // every product at the number, of any print, for reasons
+	var here []card.SourceCard
 	for _, c := range cards {
-		if normNumber(c.Number) != normNumber(local) {
-			continue
-		}
-		atNumber = append(atNumber, c.Name)
-		// A pattern print is its own product: a plain row must never price one,
-		// nor a Poké Ball row the plain card or the Master Ball one.
-		if c.Print != rowPrint {
-			continue
-		}
-		byNumber = append(byNumber, c)
-		if normName(c.Name) == want {
-			byName = append(byName, c)
-		}
-		if slices.ContainsFunc(c.Aliases, func(a string) bool { return normName(a) == want }) {
-			byAlias = append(byAlias, c)
+		if normNumber(c.Number) == normNumber(local) {
+			atNumber = append(atNumber, c.Name)
+			here = append(here, c)
 		}
 	}
-	// Aliases only count when no card at this number matches the name exactly,
-	// so "Charizard" still beats "Charizard (Full Art)" at the same number.
-	if len(byName) == 0 {
-		byName = byAlias
+	byNumber, byName := candidates(here, rowPrint, want)
+	if len(byNumber) == 0 && fallsBackInPromoSets[rowPrint] && strings.HasSuffix(card.Normalize(row.Expansion), "promos") {
+		byNumber, byName = candidates(here, card.PrintStandard, want)
 	}
 	switch {
 	case len(atNumber) == 0:
@@ -138,6 +132,31 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 
 	m.Status, m.SourceCardID, m.Variant = card.StatusResolved, byName[0].ID, variant
 	return m, nil
+}
+
+// candidates returns the products of print p, and those whose name matches
+// want. A pattern or stamped print is its own product: a plain row must never
+// price one, nor a Poké Ball row the plain card. Aliases only count when no
+// product matches the name exactly, so "Charizard" still beats "Charizard
+// (Full Art)" at the same number.
+func candidates(here []card.SourceCard, p card.Print, want string) (byPrint, byName []card.SourceCard) {
+	var byAlias []card.SourceCard
+	for _, c := range here {
+		if c.Print != p {
+			continue
+		}
+		byPrint = append(byPrint, c)
+		if normName(c.Name) == want {
+			byName = append(byName, c)
+		}
+		if slices.ContainsFunc(c.Aliases, func(a string) bool { return normName(a) == want }) {
+			byAlias = append(byAlias, c)
+		}
+	}
+	if len(byName) == 0 {
+		byName = byAlias
+	}
+	return byPrint, byName
 }
 
 func (r *Resolver) load(ctx context.Context) error {
