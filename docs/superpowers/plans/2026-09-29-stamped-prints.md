@@ -37,7 +37,7 @@
 **Interfaces:**
 - Produces: `PrintPrerelease Print = "prerelease"`, `PrintPrereleaseStaff = "prerelease-staff"`, `PrintWorlds = "worlds"`, `PrintWorldsStaff = "worlds-staff"`, `PrintAnniversary = "30th"`; `VariantStamped Variant = "stamped"`; five new `ParseVariant` labels.
 
-- [ ] **Step 1: Failing test.** In `TestParseVariant`'s table, after the `{"Energy Reverse Holo", …}` row, add:
+- [x] **Step 1: Failing test.** In `TestParseVariant`'s table, after the `{"Energy Reverse Holo", …}` row, add:
 
 ```go
 		// Stamped promo prints: a separate product at the source, priced at its only price.
@@ -48,9 +48,9 @@
 		{"30th Anniversary", VariantStamped, PrintAnniversary, nil},
 ```
 
-- [ ] **Step 2: Red.** `go test ./internal/card/` → build failure: `undefined: VariantStamped`, `undefined: PrintPrerelease`, ….
+- [x] **Step 2: Red.** `go test ./internal/card/` → build failure: `undefined: VariantStamped`, `undefined: PrintPrerelease`, ….
 
-- [ ] **Step 3: Implement.** In the `Variant` constants, after `VariantPattern`:
+- [x] **Step 3: Implement.** In the `Variant` constants, after `VariantPattern`:
 
 ```go
 	// VariantStamped is a stamped promo print's only price, whichever
@@ -81,8 +81,8 @@ In `variantLabels`, after the `"energy reverse holo"` entry:
 
 Update `variantLabels`' comment: "Anything absent is excluded on purpose: Cosmos, Prize Pack, set stamps and other promos."
 
-- [ ] **Step 4: Green.** `go test ./...` → PASS.
-- [ ] **Step 5: Commit.** `card: stamped promo prints and VariantStamped`
+- [x] **Step 4: Green.** `go test ./...` → PASS.
+- [x] **Step 5: Commit.** `card: stamped promo prints and VariantStamped`
 
 ---
 
@@ -96,7 +96,7 @@ Update `variantLabels`' comment: "Anything absent is excluded on purpose: Cosmos
 - Consumes: Task 1's prints and `VariantStamped`.
 - Produces: `Cards` sets `Print` for stamped products (full raw `Name`, bare name in `Aliases`); standard names lose a ` - <own number>` suffix however it is padded; `Quote` answers `VariantStamped` from exactly one of `Normal`, `Holofoil`, `Reverse Holofoil`.
 
-- [ ] **Step 1: Failing tests.** Add after `TestCardsPatternPrints`:
+- [x] **Step 1: Failing tests.** Add after `TestCardsPatternPrints`:
 
 ```go
 // Stamped promo prints (probe, 2026-09-29): the staff marker is a trailing
@@ -212,9 +212,9 @@ func TestQuoteStamped(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Red.** `go test ./internal/source/pokewallet/ -run "TestCardsStampedPrints|TestCardsNumberSuffix|TestQuoteStamped" -v` → stamped rows report `Print ""`; padded suffixes are not removed (`Ampharos - 075`, `Quaxly -  063`, `Haunter  - 027`, `Mimikyu -160/091`, `Mega Charizard X ex - 023`); `TestQuoteStamped` priced cases give `ErrVariantUnavailable`. Rows expected to stay standard pass.
+- [x] **Step 2: Red.** `go test ./internal/source/pokewallet/ -run "TestCardsStampedPrints|TestCardsNumberSuffix|TestQuoteStamped" -v` → stamped rows report `Print ""`; padded suffixes are not removed (`Ampharos - 075`, `Quaxly -  063`, `Haunter  - 027`, `Mimikyu -160/091`, `Mega Charizard X ex - 023`); `TestQuoteStamped` priced cases give `ErrVariantUnavailable`. Rows expected to stay standard pass.
 
-- [ ] **Step 3: Implement.** Add `"unicode"` to the imports. In `subtypes`, after the `VariantPattern` line:
+- [x] **Step 3: Implement.** Add `"unicode"` to the imports. In `subtypes`, after the `VariantPattern` line:
 
 ```go
 	card.VariantStamped:          {"Normal", "Holofoil", "Reverse Holofoil"}, // the product's only price (probe, 2026-09-29)
@@ -325,8 +325,8 @@ In `Cards`, replace the loop body:
 		}
 ```
 
-- [ ] **Step 4: Green.** Focused tests, then `go test ./...`. All existing `TestCards*` tests must pass unchanged.
-- [ ] **Step 5: Commit.** `pokewallet: read stamped prints and padded number suffixes`
+- [x] **Step 4: Green.** Focused tests, then `go test ./...`. All existing `TestCards*` tests must pass unchanged.
+- [x] **Step 5: Commit.** `pokewallet: read stamped prints and padded number suffixes`
 
 > **Go note:** `FindStringSubmatchIndex` returns byte offsets in pairs (`m[0]:m[1]` whole match, `m[2]:m[3]` first group), so the name can be sliced without a second search.
 
@@ -342,7 +342,7 @@ In `Cards`, replace the loop body:
 - Consumes: Task 1's prints and `VariantStamped`.
 - Produces: reasons `no prerelease print …`, `no prerelease-staff print …` (existing format).
 
-- [ ] **Step 1: Failing tests.** In `newFake()`, add to `sets`:
+- [x] **Step 1: Failing tests.** In `newFake()`, add to `sets`:
 
 ```go
 			{ID: "24451", Names: []string{"ME: Mega Evolution Promo", "Mega Evolution Promo"}},
@@ -403,9 +403,9 @@ Move the `tests` declaration below these two lines if needed, and add cases:
 			card.StatusUnmatched, "", "", `no prerelease print at set 24269 #087; has ["Team Rocket's Mimikyu"]`},
 ```
 
-- [ ] **Step 2: Red.** `go test ./internal/resolve/ -run TestResolve -v` → the two "promo set: … is the plain product" cases fail with `no prerelease print …` / `no 30th print …`; every other new case already passes (Tasks 1–2 did the matching).
+- [x] **Step 2: Red.** `go test ./internal/resolve/ -run TestResolve -v` → the two "promo set: … is the plain product" cases fail with `no prerelease print …` / `no 30th print …`; every other new case already passes (Tasks 1–2 did the matching).
 
-- [ ] **Step 3: Implement.** In `resolve.go`, before `Resolve`:
+- [x] **Step 3: Implement.** In `resolve.go`, before `Resolve`:
 
 ```go
 // fallsBackInPromoSets lists the prints a promo set may leave unlabelled. A
@@ -463,8 +463,8 @@ func candidates(here []card.SourceCard, p card.Print, want string) (byPrint, byN
 }
 ```
 
-- [ ] **Step 4: Green.** `go test ./internal/resolve/ -v`, then `go test ./...`.
-- [ ] **Step 5: Commit.** `resolve: in promo sets, an unlabelled prerelease or 30th print is the plain product`
+- [x] **Step 4: Green.** `go test ./internal/resolve/ -v`, then `go test ./...`.
+- [x] **Step 5: Commit.** `resolve: in promo sets, an unlabelled prerelease or 30th print is the plain product`
 
 > **Go note:** `candidates` returns two named slices. Named results document what each return means, the way C# tuple element names do.
 
@@ -474,8 +474,8 @@ func candidates(here []card.SourceCard, p card.Print, want string) (byPrint, byN
 
 **Files:** `docs/PRD.md`, `README.md`, `docs/superpowers/specs/2026-09-29-stamped-prints-design.md`
 
-- [ ] **Step 1: FR-17.** Replace the FR-17 row's requirement text with: `Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) and stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) as their own source products, never as the plain card (DD-16, DD-17)`.
-- [ ] **Step 2: DD-17.** After DD-16's last bullet, add:
+- [x] **Step 1: FR-17.** Replace the FR-17 row's requirement text with: `Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) and stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) as their own source products, never as the plain card (DD-16, DD-17)`.
+- [x] **Step 2: DD-17.** After DD-16's last bullet, add:
 
 ```markdown
 ### DD-17: In a promo set, an unlabelled prerelease or anniversary print is the plain product
@@ -497,8 +497,8 @@ and `(30th Celebration)` qualifiers and priced at the product's only price. The 
   off, narrow enough to state in a sentence and tested both ways.
 ```
 
-- [ ] **Step 3: Idea 2.** Append to the "Delivered 2026-09-27 …" note in §13 idea 2: ` Stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) delivered 2026-09-29 (DD-17).`
-- [ ] **Step 4: README.** Replace the special-prints bullet under "What phase 1 does not do" with:
+- [x] **Step 3: Idea 2.** Append to the "Delivered 2026-09-27 …" note in §13 idea 2: ` Stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) delivered 2026-09-29 (DD-17).`
+- [x] **Step 4: README.** Replace the special-prints bullet under "What phase 1 does not do" with:
 
 ```markdown
 - **Special prints:** Cosmos, Prize Pack, set stamps and other promos are reported as
@@ -507,8 +507,8 @@ and `(30th Celebration)` qualifiers and priced at the product's only price. The 
   products (PRD DD-16, DD-17).
 ```
 
-- [ ] **Step 5: Spec status.** `**Status:** approved; implemented on feat/stamped-prints`.
-- [ ] **Step 6: Verify and commit.** `gofmt -l .`, `go vet ./...`, `go test ./...`. Commit: `docs: DD-17, stamped promo prints`.
+- [x] **Step 5: Spec status.** `**Status:** approved; implemented on feat/stamped-prints`.
+- [x] **Step 6: Verify and commit.** `gofmt -l .`, `go vet ./...`, `go test ./...`. Commit: `docs: DD-17, stamped promo prints`.
 
 ---
 
