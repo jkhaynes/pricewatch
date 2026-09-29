@@ -249,6 +249,9 @@ func TestCardsNumberSuffix(t *testing.T) {
 		{"Mega Charizard X ex - 023", "23", "Mega Charizard X ex"},
 		{"Porygon - 2", "150", "Porygon - 2"},
 		{"Destined Rivals Booster Box", "", "Destined Rivals Booster Box"},
+		// A number that doesn't end in a digit only ever matches the exact suffix.
+		{"Pikachu - 177a", "177a", "Pikachu"},
+		{"Galarian Meowth - SV086", "SV86", "Galarian Meowth"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

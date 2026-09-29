@@ -235,8 +235,13 @@ func printOf(name string) (card.Print, string) {
 var numberSuffix = regexp.MustCompile(`\s+-\s*([A-Za-z]*\d+(?:/[A-Za-z]*\d+)?)$`)
 
 // trimNumber removes a trailing number when it is the card's own, however it
-// is padded: "Ampharos - 075" at card number "75" is "Ampharos".
+// is padded: "Ampharos - 075" at card number "75" is "Ampharos". It tries the
+// exact suffix first, so a number that doesn't end in a digit ("177a",
+// "SM-P") is still trimmed; the regex only handles padding and spacing.
 func trimNumber(name, number string) string {
+	if trimmed := strings.TrimSuffix(name, " - "+number); trimmed != name {
+		return trimmed
+	}
 	m := numberSuffix.FindStringSubmatchIndex(name)
 	if m == nil || !sameLocal(name[m[2]:m[3]], number) {
 		return name
