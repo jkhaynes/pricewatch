@@ -47,6 +47,9 @@ const (
 	// VariantPattern is a pattern print's own foil, whichever sub-type the
 	// source files it under. Only pattern prints use it.
 	VariantPattern Variant = "pattern"
+	// VariantStamped is a stamped promo print's only price, whichever
+	// sub-type the source files it under.
+	VariantStamped Variant = "stamped"
 )
 
 // Print says which physical print a row or source product is. Most cards have
@@ -65,6 +68,12 @@ const (
 	PrintDuskBall   Print = "duskball"
 	PrintRocket     Print = "rocket"
 	PrintEnergy     Print = "energy"
+
+	PrintPrerelease      Print = "prerelease"
+	PrintPrereleaseStaff Print = "prerelease-staff"
+	PrintWorlds          Print = "worlds"
+	PrintWorldsStaff     Print = "worlds-staff"
+	PrintAnniversary     Print = "30th"
 )
 
 func (p Print) String() string {
@@ -81,7 +90,7 @@ type finish struct {
 
 // variantLabels maps normalised TCG Collector labels to what they mean (labels
 // from the real export, Task 0 of phase 1). Anything absent is excluded on
-// purpose: Cosmos, Prize Pack, stamps and promos.
+// purpose: Cosmos, Prize Pack, set stamps and other promos.
 var variantLabels = map[string]finish{
 	"normal":           {VariantNormal, PrintStandard},
 	"non-holo":         {VariantNormal, PrintStandard},
@@ -99,6 +108,12 @@ var variantLabels = map[string]finish{
 	"dusk ball reverse holo":   {VariantPattern, PrintDuskBall},
 	"rocket reverse holo":      {VariantPattern, PrintRocket},
 	"energy reverse holo":      {VariantPattern, PrintEnergy},
+
+	"prerelease":                  {VariantStamped, PrintPrerelease},
+	"prerelease (staff)":          {VariantStamped, PrintPrereleaseStaff},
+	"world championships":         {VariantStamped, PrintWorlds},
+	"world championships (staff)": {VariantStamped, PrintWorldsStaff},
+	"30th anniversary":            {VariantStamped, PrintAnniversary},
 }
 
 func ParseVariant(label string) (Variant, Print, error) {

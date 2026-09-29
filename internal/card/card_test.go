@@ -51,6 +51,12 @@ func TestParseVariant(t *testing.T) {
 		{"Dusk Ball Reverse Holo", VariantPattern, PrintDuskBall, nil},
 		{"Rocket Reverse Holo", VariantPattern, PrintRocket, nil},
 		{"Energy Reverse Holo", VariantPattern, PrintEnergy, nil},
+		// Stamped promo prints: a separate product at the source, priced at its only price.
+		{"Prerelease", VariantStamped, PrintPrerelease, nil},
+		{"Prerelease (Staff)", VariantStamped, PrintPrereleaseStaff, nil},
+		{"World Championships", VariantStamped, PrintWorlds, nil},
+		{"World Championships (Staff)", VariantStamped, PrintWorldsStaff, nil},
+		{"30th Anniversary", VariantStamped, PrintAnniversary, nil},
 		// Real labels from the export that are still excluded on purpose.
 		{"Cosmos Holo", "", PrintStandard, ErrUnsupportedVariant},
 		{"Play! Pokémon Prize Pack, Non-holo", "", PrintStandard, ErrUnsupportedVariant},
