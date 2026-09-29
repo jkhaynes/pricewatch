@@ -65,7 +65,11 @@ var english = map[string]bool{"english": true, "en": true}
 // fallsBackInPromoSets lists the prints a promo set may leave unlabelled. A
 // prerelease-only or anniversary-only promo number is listed as the plain
 // product (Ampharos #075, Bulbasaur #037; probe 2026-09-29), so in a promo set,
-// and only there, the plain product is taken as that print (DD-17). In a main
+// and only there, the plain product is taken as that print (DD-17) -- but only
+// when exactly one standard product sits at the number. printOf cannot tell
+// "nothing labelled" from "labelled in a way it doesn't recognise" (both come
+// back as PrintStandard), so a second standard product at the number, however
+// it is named, blocks the fallback rather than risk mispricing it. In a main
 // set the plain product is the ordinary card.
 var fallsBackInPromoSets = map[card.Print]bool{card.PrintPrerelease: true, card.PrintAnniversary: true}
 
@@ -112,7 +116,8 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 		}
 	}
 	byNumber, byName := candidates(here, rowPrint, want)
-	if len(byNumber) == 0 && fallsBackInPromoSets[rowPrint] && strings.HasSuffix(card.Normalize(row.Expansion), "promos") {
+	if len(byNumber) == 0 && fallsBackInPromoSets[rowPrint] && strings.HasSuffix(card.Normalize(row.Expansion), "promos") &&
+		countPrint(here, card.PrintStandard) == 1 {
 		byNumber, byName = candidates(here, card.PrintStandard, want)
 	}
 	switch {
@@ -157,6 +162,17 @@ func candidates(here []card.SourceCard, p card.Print, want string) (byPrint, byN
 		byName = byAlias
 	}
 	return byPrint, byName
+}
+
+// countPrint counts the products at a number with the given print.
+func countPrint(here []card.SourceCard, p card.Print) int {
+	n := 0
+	for _, c := range here {
+		if c.Print == p {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *Resolver) load(ctx context.Context) error {

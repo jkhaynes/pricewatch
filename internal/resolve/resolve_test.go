@@ -86,13 +86,21 @@ func newFake() *fakeCatalog {
 				{ID: "pk_amph_staff", Number: "75", Name: "Ampharos - 075 [Staff]", Print: card.PrintPrereleaseStaff, Aliases: []string{"Ampharos"}},
 				{ID: "pk_bulba", Number: "37", Name: "Bulbasaur"},
 				{ID: "pk_luna", Number: "4", Name: "Lunatone"},
+				{ID: "pk_slow", Number: "83", Name: "Slowbro"},
+				// An unreadable label: pokewallet gives this PrintStandard with no
+				// alias, so it must block the fallback rather than look empty.
+				{ID: "pk_slow_pb", Number: "83", Name: "Slowbro - 083 (Pitch Black Stamped)"},
+				{ID: "pk_meg", Number: "1", Name: "Meganium"},
 			},
 			"22872": {
 				{ID: "pk_pr150", Number: "150", Name: "Paradise Resort - 150 (World Championships 2024)", Print: card.PrintWorlds, Aliases: []string{"Paradise Resort"}},
 				{ID: "pk_pr150_staff", Number: "150", Name: "Paradise Resort - 150 (World Championships 2024) [Staff]", Print: card.PrintWorldsStaff, Aliases: []string{"Paradise Resort"}},
 			},
 			// A main set: the unlabelled product is the ordinary card.
-			"24269": {{ID: "pk_trmimikyu", Number: "087", Name: "Team Rocket's Mimikyu"}},
+			"24269": {
+				{ID: "pk_trmimikyu", Number: "087", Name: "Team Rocket's Mimikyu"},
+				{ID: "pk_trmeowth", Number: "088", Name: "Team Rocket's Meowth"},
+			},
 		},
 		cardCalls: map[string]int{},
 	}
@@ -198,6 +206,14 @@ func TestResolve(t *testing.T) {
 			card.StatusUnmatched, "", "", `no prerelease-staff print at set 24451 #004; has ["Lunatone"]`},
 		{"main set: prerelease never falls back", r("Team Rocket's Mimikyu", "Destined Rivals", "087/182", "Prerelease", "English"), nil,
 			card.StatusUnmatched, "", "", `no prerelease print at set 24269 #087; has ["Team Rocket's Mimikyu"]`},
+		{"main set: 30th never falls back", r("Team Rocket's Meowth", "Destined Rivals", "088/182", "30th Anniversary", "English"), nil,
+			card.StatusUnmatched, "", "", "no 30th print at set 24269 #088"},
+		{"promo set: worlds never falls back", r("Bulbasaur", "Mega Evolution Promos", "037", "World Championships", "English"), me,
+			card.StatusUnmatched, "", "", "no worlds print at set 24451 #037"},
+		{"promo set: an unreadable label at the number blocks the fallback", r("Slowbro", "Mega Evolution Promos", "083", "Prerelease", "English"), me,
+			card.StatusUnmatched, "", "", "no prerelease print at set 24451 #083"},
+		{"promo set: fallback still requires the name", r("Chikorita", "Mega Evolution Promos", "001", "Prerelease", "English"), me,
+			card.StatusUnmatched, "", "", "name mismatch"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
