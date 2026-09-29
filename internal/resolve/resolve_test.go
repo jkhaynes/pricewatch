@@ -40,6 +40,9 @@ func newFake() *fakeCatalog {
 			{ID: "24326", Names: []string{"SV: White Flare", "White Flare"}},
 			{ID: "2754", Names: []string{"Shining Fates"}},
 			{ID: "2781", Names: []string{"Shining Fates: Shiny Vault"}},
+			{ID: "24451", Names: []string{"ME: Mega Evolution Promo", "Mega Evolution Promo"}},
+			{ID: "22872", Names: []string{"SV: Scarlet & Violet Promo Cards", "Scarlet & Violet Promo Cards"}},
+			{ID: "24269", Names: []string{"SV10: Destined Rivals", "Destined Rivals"}},
 		},
 		cards: map[string][]card.SourceCard{
 			"1393":  {{ID: "pk_59", Number: "59", Name: "Mudkip"}},
@@ -73,6 +76,31 @@ func newFake() *fakeCatalog {
 			},
 			"2754": {{ID: "pk_sf12", Number: "012", Name: "Rillaboom V"}},
 			"2781": {{ID: "pk_sv86", Number: "SV086", Name: "Galarian Meowth"}},
+			// Mega Evolution Promos as PokeWallet lists them (probe, 2026-09-29).
+			// The plain Ceruledge is added to prove a labelled product wins.
+			"24451": {
+				{ID: "pk_cer", Number: "14", Name: "Ceruledge"},
+				{ID: "pk_cer_pre", Number: "14", Name: "Ceruledge (Prerelease)", Print: card.PrintPrerelease, Aliases: []string{"Ceruledge"}},
+				{ID: "pk_cer_staff", Number: "14", Name: "Ceruledge (Prerelease) [Staff]", Print: card.PrintPrereleaseStaff, Aliases: []string{"Ceruledge"}},
+				{ID: "pk_amph", Number: "75", Name: "Ampharos"},
+				{ID: "pk_amph_staff", Number: "75", Name: "Ampharos - 075 [Staff]", Print: card.PrintPrereleaseStaff, Aliases: []string{"Ampharos"}},
+				{ID: "pk_bulba", Number: "37", Name: "Bulbasaur"},
+				{ID: "pk_luna", Number: "4", Name: "Lunatone"},
+				{ID: "pk_slow", Number: "83", Name: "Slowbro"},
+				// An unreadable label: pokewallet gives this PrintStandard with no
+				// alias, so it must block the fallback rather than look empty.
+				{ID: "pk_slow_pb", Number: "83", Name: "Slowbro - 083 (Pitch Black Stamped)"},
+				{ID: "pk_meg", Number: "1", Name: "Meganium"},
+			},
+			"22872": {
+				{ID: "pk_pr150", Number: "150", Name: "Paradise Resort - 150 (World Championships 2024)", Print: card.PrintWorlds, Aliases: []string{"Paradise Resort"}},
+				{ID: "pk_pr150_staff", Number: "150", Name: "Paradise Resort - 150 (World Championships 2024) [Staff]", Print: card.PrintWorldsStaff, Aliases: []string{"Paradise Resort"}},
+			},
+			// A main set: the unlabelled product is the ordinary card.
+			"24269": {
+				{ID: "pk_trmimikyu", Number: "087", Name: "Team Rocket's Mimikyu"},
+				{ID: "pk_trmeowth", Number: "088", Name: "Team Rocket's Meowth"},
+			},
 		},
 		cardCalls: map[string]int{},
 	}
@@ -83,6 +111,8 @@ func r(name, exp, num, variant, lang string) card.Row {
 }
 
 func TestResolve(t *testing.T) {
+	me := []Override{{Expansion: "Mega Evolution Promos", SetID: "24451"}}
+	sv := []Override{{Expansion: "Scarlet & Violet Promos", SetID: "22872"}}
 	tests := []struct {
 		name        string
 		row         card.Row
@@ -156,6 +186,34 @@ func TestResolve(t *testing.T) {
 			card.StatusResolved, "pk_sf12", card.VariantHolo, ""},
 		{"subset card without a prefix override is reported", r("Galarian Meowth", "Shining Fates", "SV086/SV122", "Normal Holo", "English"), nil,
 			card.StatusUnmatched, "", "", "number SV086 not in set 2754"},
+
+		// Stamped promo prints.
+		{"labelled prerelease beats the plain product", r("Ceruledge", "Mega Evolution Promos", "014", "Prerelease", "English"), me,
+			card.StatusResolved, "pk_cer_pre", card.VariantStamped, ""},
+		{"labelled prerelease staff", r("Ceruledge", "Mega Evolution Promos", "014", "Prerelease (Staff)", "English"), me,
+			card.StatusResolved, "pk_cer_staff", card.VariantStamped, ""},
+		{"promo set: unlabelled prerelease is the plain product", r("Ampharos", "Mega Evolution Promos", "075", "Prerelease", "English"), me,
+			card.StatusResolved, "pk_amph", card.VariantStamped, ""},
+		{"promo set: staff by its marker", r("Ampharos", "Mega Evolution Promos", "075", "Prerelease (Staff)", "English"), me,
+			card.StatusResolved, "pk_amph_staff", card.VariantStamped, ""},
+		{"promo set: 30th anniversary is the plain product", r("Bulbasaur", "Mega Evolution Promos", "037", "30th Anniversary", "English"), me,
+			card.StatusResolved, "pk_bulba", card.VariantStamped, ""},
+		{"worlds staff", r("Paradise Resort", "Scarlet & Violet Promos", "150", "World Championships (Staff)", "English"), sv,
+			card.StatusResolved, "pk_pr150_staff", card.VariantStamped, ""},
+		{"worlds", r("Paradise Resort", "Scarlet & Violet Promos", "150", "World Championships", "English"), sv,
+			card.StatusResolved, "pk_pr150", card.VariantStamped, ""},
+		{"staff never falls back to the plain product", r("Lunatone", "Mega Evolution Promos", "004", "Prerelease (Staff)", "English"), me,
+			card.StatusUnmatched, "", "", `no prerelease-staff print at set 24451 #004; has ["Lunatone"]`},
+		{"main set: prerelease never falls back", r("Team Rocket's Mimikyu", "Destined Rivals", "087/182", "Prerelease", "English"), nil,
+			card.StatusUnmatched, "", "", `no prerelease print at set 24269 #087; has ["Team Rocket's Mimikyu"]`},
+		{"main set: 30th never falls back", r("Team Rocket's Meowth", "Destined Rivals", "088/182", "30th Anniversary", "English"), nil,
+			card.StatusUnmatched, "", "", "no 30th print at set 24269 #088"},
+		{"promo set: worlds never falls back", r("Bulbasaur", "Mega Evolution Promos", "037", "World Championships", "English"), me,
+			card.StatusUnmatched, "", "", "no worlds print at set 24451 #037"},
+		{"promo set: an unreadable label at the number blocks the fallback", r("Slowbro", "Mega Evolution Promos", "083", "Prerelease", "English"), me,
+			card.StatusUnmatched, "", "", "no prerelease print at set 24451 #083"},
+		{"promo set: fallback still requires the name", r("Chikorita", "Mega Evolution Promos", "001", "Prerelease", "English"), me,
+			card.StatusUnmatched, "", "", "name mismatch"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

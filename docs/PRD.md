@@ -89,7 +89,7 @@ keep the project honest, not enough to justify building for them.
 | FR-14 | Runs execute unattended on a schedule, never overlap, and write their report somewhere readable afterwards | P1 |
 | FR-15 | A public, static status page: price movement and coverage, biggest movers with card art, how cards are scheduled, the request budget, and unresolved cards (DD-14) | P1 |
 | FR-16 | A local, read-only MCP server for asking questions about the collection in plain English (DD-15) | P1 |
-| FR-17 | Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) as their own source products, never as the plain card (DD-16) | P1 |
+| FR-17 | Price pattern reverse holos (Poké, Master, Friend, Quick, Love, Dusk Ball, Rocket, Energy) and stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) as their own source products, never as the plain card (DD-16, DD-17) | P1 |
 
 ## 7. Technical design
 
@@ -659,6 +659,26 @@ plain card. The design is in `docs/superpowers/specs/2026-09-27-special-prints-d
 - **Pricing:** `VariantPattern` accepts `Holofoil` or `Reverse Holofoil`. A product with
   both is ambiguous and reported (DD-5).
 
+### DD-17: In a promo set, an unlabelled prerelease or anniversary print is the plain product
+
+**Decision (2026-09-29, the author's call):** stamped promo prints extend DD-16 with prints
+for Prerelease, Prerelease (Staff), World Championships (± Staff) and 30th Anniversary,
+read from PokéWallet's `(Prerelease)`, `[Staff]` / `(Staff)`, `(World Championships <year>)`
+and `(30th Celebration)` qualifiers and priced at the product's only price. The design is in
+`docs/superpowers/specs/2026-09-29-stamped-prints-design.md`.
+
+- **The inference:** when a promo number *is* the prerelease or anniversary card,
+  PokéWallet lists it unlabelled (`Ampharos - 075`, `Bulbasaur - 037`) and labels only the
+  staff print. So in a set whose TCG Collector name ends in "Promos", a Prerelease or
+  30th Anniversary row with no labelled product at its number takes the plain product,
+  provided it is the only unlabelled product at that number (a label pricewatch cannot
+  read blocks the rule).
+- **Where it does not apply:** main sets, where the plain product is the ordinary card
+  (Destined Rivals #087 stays `no prerelease print`), and Staff or World Championships
+  rows, which are always labelled.
+- This is the one sanctioned exception to "never guess" (DD-5): a rule the author signed
+  off, narrow enough to state in a sentence and tested both ways.
+
 ## 9. Acceptance criteria, v1
 
 - [x] `pricewatch import export.csv` loads the collection and reports how many rows resolved, were ambiguous, or went unmatched
@@ -797,7 +817,7 @@ did for the dashboard.
    anything. Each supported print must still match exactly one price, or be reported (DD-5).
 
    **Delivered 2026-09-27 for ball-pattern, Rocket and Energy reverse holos (FR-17, DD-16).**
-   Cosmos, Prize Pack, stamps and promos remain excluded.
+   Cosmos, Prize Pack, stamps and promos remain excluded. Stamped promo prints (Prerelease, Staff, World Championships, 30th Anniversary) delivered 2026-09-29 (DD-17).
 
 3. **Cross-provider mapping by TCGplayer product ID.** Both sources expose TCGplayer's
    product ID:

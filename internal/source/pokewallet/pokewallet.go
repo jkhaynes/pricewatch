@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jkhaynes/pricewatch/internal/card"
 	"github.com/jkhaynes/pricewatch/internal/source"
@@ -30,7 +31,8 @@ var subtypes = map[card.Variant][]string{
 	card.VariantReverseHolo:      {"Reverse Holofoil"},
 	card.VariantFirstEdition:     {"1st Edition"},
 	card.VariantFirstEditionHolo: {"1st Edition Holofoil"},
-	card.VariantPattern:          {"Holofoil", "Reverse Holofoil"}, // one or the other by era (probe, 2026-09-27)
+	card.VariantPattern:          {"Holofoil", "Reverse Holofoil"},           // one or the other by era (probe, 2026-09-27)
+	card.VariantStamped:          {"Normal", "Holofoil", "Reverse Holofoil"}, // the product's only price (probe, 2026-09-29)
 }
 
 func Config(baseURL, apiKey string, q source.Quota, timeout time.Duration) source.Config {
@@ -127,14 +129,14 @@ func (p *Provider) Cards(ctx context.Context, setID string) ([]card.SourceCard, 
 			number := c.CardInfo.CardNumber
 			local, _, _ := strings.Cut(number, "/")
 			sc := card.SourceCard{ID: c.ID, Number: local}
-			if pr, base := patternOf(c.CardInfo.Name); pr != card.PrintStandard {
+			if pr, base := printOf(c.CardInfo.Name); pr != card.PrintStandard {
 				// Keep the full name for reports; match by the bare name.
 				sc.Name, sc.Print = c.CardInfo.Name, pr
-				if bare, ok := bareName(strings.TrimSuffix(base, " - "+number), local); ok {
+				if bare, ok := bareName(trimNumber(base, number), local); ok {
 					sc.Aliases = []string{bare}
 				}
 			} else {
-				sc.Name = strings.TrimSuffix(c.CardInfo.Name, " - "+number)
+				sc.Name = trimNumber(c.CardInfo.Name, number)
 				sc.Aliases = aliases(sc.Name, local)
 			}
 			out = append(out, sc)
@@ -183,19 +185,92 @@ var patterns = map[string]card.Print{
 	"energy symbol pattern": card.PrintEnergy,
 }
 
-// patternOf splits a pattern product's last qualifier off its name:
-// "Pansear (Poke Ball Pattern)" is PrintPokeBall with base "Pansear".
-// Anything else is PrintStandard with the name unchanged.
-func patternOf(name string) (card.Print, string) {
-	m := trailingQualifier.FindStringSubmatch(name)
-	if m == nil {
-		return card.PrintStandard, name
+// staffMarker is PokeWallet's suffix for staff prints: "Ceruledge (Prerelease) [Staff]".
+var staffMarker = regexp.MustCompile(`(?i)\s*\[staff\]$`)
+
+// worlds matches World Championships qualifiers whatever the year, including
+// the "World Championship 2025" misspelling seen live.
+var worlds = regexp.MustCompile(`^world championships? \d{4}$`)
+
+// printOf reads a product's print from its trailing qualifiers and returns the
+// name without them: "Ceruledge (Prerelease) [Staff]" is PrintPrereleaseStaff
+// with base "Ceruledge". Anything unrecognised is PrintStandard with the name
+// unchanged, so it never matches a pattern or stamped row. A staff marker over
+// an unrecognised qualifier, such as "Slowbro - 083 (Pitch Black Stamped)
+// [Staff]", instead gives PrintPrereleaseStaff with the qualifier still in the
+// name: bareName then refuses it an alias, so it still never matches.
+func printOf(name string) (card.Print, string) {
+	base, staff := name, false
+	if loc := staffMarker.FindStringIndex(base); loc != nil {
+		base, staff = base[:loc[0]], true
 	}
-	p, ok := patterns[strings.ToLower(m[2])]
-	if !ok {
-		return card.PrintStandard, name
+	m := trailingQualifier.FindStringSubmatch(base)
+	if m != nil && strings.EqualFold(m[2], "staff") {
+		base, staff = m[1], true
+		m = trailingQualifier.FindStringSubmatch(base)
 	}
-	return p, m[1]
+	q := ""
+	if m != nil {
+		q = strings.ToLower(m[2])
+	}
+	switch {
+	case q == "prerelease" && staff:
+		return card.PrintPrereleaseStaff, m[1]
+	case q == "prerelease":
+		return card.PrintPrerelease, m[1]
+	case worlds.MatchString(q) && staff:
+		return card.PrintWorldsStaff, m[1]
+	case worlds.MatchString(q):
+		return card.PrintWorlds, m[1]
+	case staff && (q == "30th celebration" || patterns[q] != ""):
+		return card.PrintStandard, name // a combination not seen live
+	case q == "30th celebration":
+		return card.PrintAnniversary, m[1]
+	case patterns[q] != "":
+		return patterns[q], m[1]
+	case staff:
+		return card.PrintPrereleaseStaff, base // "Ampharos - 075 [Staff]"
+	}
+	return card.PrintStandard, name
+}
+
+// numberSuffix matches a trailing number: " - 075", "  -  063", " -160/091".
+var numberSuffix = regexp.MustCompile(`\s+-\s*([A-Za-z]*\d+(?:/[A-Za-z]*\d+)?)$`)
+
+// trimNumber removes a trailing number when it is the card's own, however it
+// is padded: "Ampharos - 075" at card number "75" is "Ampharos". It tries the
+// exact suffix first, so a number that doesn't end in a digit ("177a",
+// "SM-P") is still trimmed; the regex only handles padding and spacing.
+func trimNumber(name, number string) string {
+	if trimmed := strings.TrimSuffix(name, " - "+number); trimmed != name {
+		return trimmed
+	}
+	m := numberSuffix.FindStringSubmatchIndex(name)
+	if m == nil || !sameLocal(name[m[2]:m[3]], number) {
+		return name
+	}
+	return name[:m[0]]
+}
+
+// sameLocal compares two card numbers before any "/", ignoring leading zeros
+// and case: "075" and "75/132" are the same card.
+func sameLocal(a, b string) bool {
+	a, _, _ = strings.Cut(a, "/")
+	b, _, _ = strings.Cut(b, "/")
+	return strings.EqualFold(unpad(a), unpad(b))
+}
+
+// unpad drops leading zeros after any letter prefix: "SV086" is "SV86".
+func unpad(s string) string {
+	i := strings.IndexFunc(s, unicode.IsDigit)
+	if i < 0 {
+		return s
+	}
+	d := strings.TrimLeft(s[i:], "0")
+	if d == "" {
+		d = "0"
+	}
+	return s[:i] + d
 }
 
 // bareName strips trailing qualifiers one at a time, as in
