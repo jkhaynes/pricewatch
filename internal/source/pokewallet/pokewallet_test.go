@@ -188,6 +188,118 @@ func TestCardsPatternPrints(t *testing.T) {
 	}
 }
 
+// Stamped promo prints (probe, 2026-09-29): the staff marker is a trailing
+// "[Staff]" or "(Staff)", World Championships carry a year, and promo names pad
+// the number ("Ampharos - 075" at card number 75).
+func TestCardsStampedPrints(t *testing.T) {
+	tests := []struct {
+		name, number string
+		wantPrint    card.Print
+		wantAliases  []string
+	}{
+		{"Ceruledge (Prerelease)", "14", card.PrintPrerelease, []string{"Ceruledge"}},
+		{"Ceruledge (Prerelease) [Staff]", "14", card.PrintPrereleaseStaff, []string{"Ceruledge"}},
+		{"Chi-Yu - 057 (Prerelease)", "057", card.PrintPrerelease, []string{"Chi-Yu"}},
+		{"Ledian - 133 (Prerelease) [Staff]", "133", card.PrintPrereleaseStaff, []string{"Ledian"}},
+		{"Ampharos - 075 [Staff]", "75", card.PrintPrereleaseStaff, []string{"Ampharos"}},
+		{"Alakazam - 003 (Staff)", "3", card.PrintPrereleaseStaff, []string{"Alakazam"}},
+		{"Paradise Resort - 150 (World Championships 2024)", "150", card.PrintWorlds, []string{"Paradise Resort"}},
+		{"Paradise Resort - 150 (World Championships 2024) [Staff]", "150", card.PrintWorldsStaff, []string{"Paradise Resort"}},
+		{"Paradise Resort - 224 (World Championship 2025)", "224", card.PrintWorlds, []string{"Paradise Resort"}},
+		{"Sylveon ex - 100 (30th Celebration)", "100", card.PrintAnniversary, []string{"Sylveon ex"}},
+		// Unknown combinations stay standard and unmatchable.
+		{"Nidorina - 101 (30th Celebration) (Pokemon Center Exclusive)", "101", card.PrintStandard, nil},
+		{"Mew - 105 (30th Celebration) [Staff]", "105", card.PrintStandard, nil},
+		{"Pikachu (Poke Ball Pattern) [Staff]", "117", card.PrintStandard, nil},
+		// A staff print of a different print: staff is known, the base is not this card.
+		{"Slowbro - 083 (Pitch Black Stamped) [Staff]", "83", card.PrintPrereleaseStaff, nil},
+		// Other brackets are not staff markers.
+		{"Professor's Research [Professor Oak]", "122/131", card.PrintStandard, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"cards":      []any{map[string]any{"id": "pk_x", "card_info": map[string]any{"name": tt.name, "card_number": tt.number}}},
+				"pagination": map[string]any{"page": 1, "total_pages": 1},
+			})
+			cards, err := New(fakeGetter{"/sets/s?page=1&limit=50": string(body)}).Cards(t.Context(), "s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := cards[0]
+			if c.Print != tt.wantPrint || !slices.Equal(c.Aliases, tt.wantAliases) {
+				t.Errorf("Print, Aliases = %q, %q; want %q, %q", c.Print, c.Aliases, tt.wantPrint, tt.wantAliases)
+			}
+			if c.Print != card.PrintStandard && c.Name != tt.name {
+				t.Errorf("Name = %q; a stamped product keeps its full name for reports", c.Name)
+			}
+		})
+	}
+}
+
+// A trailing " - <number>" is the card's own number however it is padded or
+// spaced, and is removed; any other number is part of the name.
+func TestCardsNumberSuffix(t *testing.T) {
+	tests := []struct{ name, number, want string }{
+		{"Mudkip - 59/109", "59/109", "Mudkip"},
+		{"Ampharos - 075", "75", "Ampharos"},
+		{"Quaxly -  063", "63", "Quaxly"},
+		{"Haunter  - 027", "27", "Haunter"},
+		{"Mimikyu -160/091", "160/091", "Mimikyu"},
+		{"Mega Charizard X ex - 023", "23", "Mega Charizard X ex"},
+		{"Porygon - 2", "150", "Porygon - 2"},
+		{"Destined Rivals Booster Box", "", "Destined Rivals Booster Box"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"cards":      []any{map[string]any{"id": "pk_x", "card_info": map[string]any{"name": tt.name, "card_number": tt.number}}},
+				"pagination": map[string]any{"page": 1, "total_pages": 1},
+			})
+			cards, err := New(fakeGetter{"/sets/s?page=1&limit=50": string(body)}).Cards(t.Context(), "s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cards[0].Name != tt.want {
+				t.Errorf("Name = %q, want %q", cards[0].Name, tt.want)
+			}
+		})
+	}
+}
+
+// A stamped product carries one price: Holofoil for most, Normal for World
+// Championships, Reverse Holofoil for a few staff prints. Two is a guess.
+func TestQuoteStamped(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       any // float64 market, or error sentinel
+	}{
+		{"Normal", `{"tcgplayer":{"prices":[{"sub_type_name":"Normal","market_price":641.76}]}}`, 641.76},
+		{"Holofoil", `{"tcgplayer":{"prices":[{"sub_type_name":"Holofoil","market_price":84.02}]}}`, 84.02},
+		{"Reverse Holofoil", `{"tcgplayer":{"prices":[{"sub_type_name":"Reverse Holofoil","market_price":3.5}]}}`, 3.5},
+		{"two prices is ambiguous", `{"tcgplayer":{"prices":[
+			{"sub_type_name":"Holofoil","market_price":2},{"sub_type_name":"Normal","market_price":1}]}}`, card.ErrVariantAmbiguous},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			qs, err := New(fakeGetter{"/cards/pk_x": tt.body}).Quote(t.Context(), "pk_x", []card.Variant{card.VariantStamped})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch w := tt.want.(type) {
+			case float64:
+				if qs[0].Err != nil || qs[0].Price.Market == nil || *qs[0].Price.Market != w {
+					t.Errorf("quote = %+v, want market %v", qs[0], w)
+				}
+			case error:
+				if !errors.Is(qs[0].Err, w) {
+					t.Errorf("err = %v, want %v", qs[0].Err, w)
+				}
+			}
+		})
+	}
+}
+
 // A pattern product carries one price, under Holofoil in SV sets and Reverse
 // Holofoil in ME sets (probe, 2026-09-27). Both at once would be a guess.
 func TestQuotePattern(t *testing.T) {
