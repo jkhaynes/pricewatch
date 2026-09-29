@@ -1,7 +1,7 @@
 # Stamped prints: Prerelease, Staff, World Championships, 30th Anniversary
 
 **Date:** 2026-09-29
-**Status:** approved in brainstorming
+**Status:** approved; implemented on feat/stamped-prints
 **PRD:** extends FR-17 and DD-16; adds DD-17 (the promo-set rule)
 
 ## Goal
