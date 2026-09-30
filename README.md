@@ -72,10 +72,19 @@ When an expansion name differs between TCG Collector and the source, the report 
 overrides file, and re-run:
 
 ```csv
-expansion,set_id
+expansion,set_id,number_prefix,print
 Sun & Moon,1863
 BREAKpoint,1701
+Shining Fates,2781,SV
+Destined Rivals,2374,,prerelease
+Destined Rivals,2374,,prerelease-staff
 ```
+
+The optional third column routes only cards whose number has that prefix (Shining Fates'
+`SV` cards live in "Shiny Vault"). The optional fourth routes only rows of one print:
+TCGplayer files Destined Rivals' prerelease cards under "Miscellaneous Cards & Products"
+(set 2374). Print names are `prerelease`, `prerelease-staff`, `worlds`, `worlds-staff`,
+`30th` and the ball patterns (`pokeball`, `masterball`, …).
 
 The first import takes a while at PokéWallet's pace, about 2½ hours for 64 expansions. It is
 safe to stop with Ctrl-C and resume later.
@@ -116,7 +125,7 @@ What the counts mean:
 |---|---|---|---|
 | `--db` | all | `pricewatch.db` | SQLite database path |
 | `--source` | all | `pokewallet` | price source |
-| `--expansions` | import | none | CSV of `expansion,set_id` overrides |
+| `--expansions` | import | none | CSV of `expansion,set_id[,number_prefix[,print]]` overrides |
 | `--budget` | run | `100` | maximum requests (source cards) this run |
 | `--no-wait` | run | off | when the hour's allowance is spent, stop and defer the rest instead of waiting (scheduled runs) |
 | `--workers` | run | `2` | concurrent workers |
