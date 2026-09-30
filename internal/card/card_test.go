@@ -92,3 +92,24 @@ func TestPrintString(t *testing.T) {
 		}
 	}
 }
+
+// ParsePrint accepts the prints a label can produce, for the overrides file.
+func TestParsePrint(t *testing.T) {
+	tests := []struct {
+		in     string
+		want   Print
+		wantOK bool
+	}{
+		{"prerelease", PrintPrerelease, true},
+		{" Prerelease-Staff ", PrintPrereleaseStaff, true},
+		{"pokeball", PrintPokeBall, true},
+		{"", "", false},
+		{"standard", "", false},
+		{"banana", "", false},
+	}
+	for _, tt := range tests {
+		if got, ok := ParsePrint(tt.in); got != tt.want || ok != tt.wantOK {
+			t.Errorf("ParsePrint(%q) = %q, %v; want %q, %v", tt.in, got, ok, tt.want, tt.wantOK)
+		}
+	}
+}

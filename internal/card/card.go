@@ -124,6 +124,18 @@ func ParseVariant(label string) (Variant, Print, error) {
 	return f.variant, f.print, nil
 }
 
+// ParsePrint returns the print named s, for the overrides file. Only prints a
+// label produces are valid; the standard print has no name.
+func ParsePrint(s string) (Print, bool) {
+	p := Print(strings.ToLower(strings.TrimSpace(s)))
+	for _, f := range variantLabels {
+		if p != PrintStandard && f.print == p {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 type Status string
 
 const (

@@ -43,6 +43,7 @@ func newFake() *fakeCatalog {
 			{ID: "24451", Names: []string{"ME: Mega Evolution Promo", "Mega Evolution Promo"}},
 			{ID: "22872", Names: []string{"SV: Scarlet & Violet Promo Cards", "Scarlet & Violet Promo Cards"}},
 			{ID: "24269", Names: []string{"SV10: Destined Rivals", "Destined Rivals"}},
+			{ID: "2374", Names: []string{"Miscellaneous Cards & Products"}},
 		},
 		cards: map[string][]card.SourceCard{
 			"1393":  {{ID: "pk_59", Number: "59", Name: "Mudkip"}},
@@ -100,6 +101,13 @@ func newFake() *fakeCatalog {
 			"24269": {
 				{ID: "pk_trmimikyu", Number: "087", Name: "Team Rocket's Mimikyu"},
 				{ID: "pk_trmeowth", Number: "088", Name: "Team Rocket's Meowth"},
+				{ID: "pk_trtyranitar", Number: "096", Name: "Team Rocket's Tyranitar"},
+			},
+			// TCGplayer files Destined Rivals' prerelease prints under Miscellaneous
+			// Cards & Products, numbered as in the set (probe, 2026-09-30).
+			"2374": {
+				{ID: "pk_tyr_pre", Number: "096", Name: "Team Rocket's Tyranitar (Prerelease)", Print: card.PrintPrerelease, Aliases: []string{"Team Rocket's Tyranitar"}},
+				{ID: "pk_tyr_staff", Number: "096", Name: "Team Rocket's Tyranitar (Prerelease) [Staff]", Print: card.PrintPrereleaseStaff, Aliases: []string{"Team Rocket's Tyranitar"}},
 			},
 		},
 		cardCalls: map[string]int{},
@@ -113,6 +121,10 @@ func r(name, exp, num, variant, lang string) card.Row {
 func TestResolve(t *testing.T) {
 	me := []Override{{Expansion: "Mega Evolution Promos", SetID: "24451"}}
 	sv := []Override{{Expansion: "Scarlet & Violet Promos", SetID: "22872"}}
+	dr := []Override{
+		{Expansion: "Destined Rivals", SetID: "2374", Print: card.PrintPrerelease},
+		{Expansion: "Destined Rivals", SetID: "2374", Print: card.PrintPrereleaseStaff},
+	}
 	tests := []struct {
 		name        string
 		row         card.Row
@@ -212,6 +224,15 @@ func TestResolve(t *testing.T) {
 			card.StatusUnmatched, "", "", "no worlds print at set 24451 #037"},
 		{"promo set: an unreadable label at the number blocks the fallback", r("Slowbro", "Mega Evolution Promos", "083", "Prerelease", "English"), me,
 			card.StatusUnmatched, "", "", "no prerelease print at set 24451 #083"},
+		// Print overrides: a print filed in another set at the source.
+		{"print override routes prerelease to its set", r("Team Rocket's Tyranitar", "Destined Rivals", "096/182", "Prerelease", "English"), dr,
+			card.StatusResolved, "pk_tyr_pre", card.VariantStamped, ""},
+		{"print override routes staff to its set", r("Team Rocket's Tyranitar", "Destined Rivals", "096/182", "Prerelease (Staff)", "English"), dr,
+			card.StatusResolved, "pk_tyr_staff", card.VariantStamped, ""},
+		{"print override leaves other prints in the home set", r("Team Rocket's Tyranitar", "Destined Rivals", "096/182", "Normal", "English"), dr,
+			card.StatusResolved, "pk_trtyranitar", card.VariantNormal, ""},
+		{"print override: a card missing from the routed set is reported", r("Team Rocket's Mimikyu", "Destined Rivals", "087/182", "Prerelease", "English"), dr,
+			card.StatusUnmatched, "", "", "number 087 not in set 2374"},
 		{"promo set: fallback still requires the name", r("Chikorita", "Mega Evolution Promos", "001", "Prerelease", "English"), me,
 			card.StatusUnmatched, "", "", "name mismatch"},
 	}
@@ -255,11 +276,12 @@ func TestResolveCatalogErrorIsReturnedNotDecided(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
-	// The third column, number_prefix, is optional per line.
+	// The third column, number_prefix, and the fourth, print, are optional per line.
 	in := "expansion,set_id,number_prefix\n" +
 		"EX Ruby & Sapphire,1393\n" +
 		"\"Black Star Promos, Wizards\",1418\n" +
-		"Shining Fates,2781,SV\n"
+		"Shining Fates,2781,SV\n" +
+		"Destined Rivals,2374,,prerelease\n"
 	got, err := LoadOverrides(strings.NewReader(in))
 	if err != nil {
 		t.Fatal(err)
@@ -268,6 +290,7 @@ func TestLoadOverrides(t *testing.T) {
 		{Expansion: "EX Ruby & Sapphire", SetID: "1393"},
 		{Expansion: "Black Star Promos, Wizards", SetID: "1418"},
 		{Expansion: "Shining Fates", SetID: "2781", NumberPrefix: "SV"},
+		{Expansion: "Destined Rivals", SetID: "2374", Print: card.PrintPrerelease},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("overrides = %+v", got)
@@ -275,7 +298,7 @@ func TestLoadOverrides(t *testing.T) {
 }
 
 func TestLoadOverridesRejectsBadLines(t *testing.T) {
-	for _, in := range []string{"Base Set\n", "Base Set,604,SV,extra\n", "Base Set,,SV\n"} {
+	for _, in := range []string{"Base Set\n", "Base Set,604,SV,prerelease,extra\n", "Base Set,604,,banana\n", "Base Set,,SV\n"} {
 		if _, err := LoadOverrides(strings.NewReader(in)); err == nil {
 			t.Errorf("LoadOverrides(%q) returned nil error", in)
 		}
