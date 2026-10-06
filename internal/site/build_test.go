@@ -60,7 +60,7 @@ func TestBuildWiresEverySection(t *testing.T) {
 	if d.Spotlight == nil || d.Spotlight.Name != "Mudkip" || d.Index.Week == nil || d.Coverage.Priced != 1 || d.Coverage.Total != 2 {
 		t.Errorf("movers/index/coverage not wired: %+v", d)
 	}
-	if len(d.Bands) != 4 || d.UnresolvedTotal != 1 || len(d.Unresolved) != 1 || len(d.Runs) != 24 {
+	if len(d.Bands) != len(priority.Default.Tiers) || d.UnresolvedTotal != 1 || len(d.Unresolved) != 1 || len(d.Runs) != 24 {
 		t.Errorf("bands/unresolved/runs not wired: bands=%d unresolved=%d/%d runs=%d", len(d.Bands), d.UnresolvedTotal, len(d.Unresolved), len(d.Runs))
 	}
 	if d.Budget.Used != 612 || d.Budget.Limit != 1000 || st.day != "2026-09-20" || d.RunMinute != 7 {

@@ -24,14 +24,15 @@ type Policy struct {
 
 const day = 24 * time.Hour
 
-// Default is DD-12's schedule: four tiers, nothing waits longer than a week.
-// About 915 requests a day for the author's collection.
+// Default is DD-12's schedule: five tiers, nothing waits longer than two weeks.
+// About 770 requests a day for the author's collection (5,682 cards, 2026-10-06).
 var Default = Policy{
 	Tiers: []Tier{
 		{Min: 100, Every: day},
 		{Min: 20, Every: 2 * day},
 		{Min: 5, Every: 4 * day},
-		{Min: 0, Every: 7 * day},
+		{Min: 1, Every: 7 * day},
+		{Min: 0, Every: 14 * day},
 	},
 	Slack: time.Hour,
 }

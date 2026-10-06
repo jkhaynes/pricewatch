@@ -23,9 +23,10 @@ func cand(id string, value float64, lastAgo time.Duration) card.Candidate {
 func TestBands(t *testing.T) {
 	cands := []card.Candidate{
 		cand("rich", 400, 12*time.Hour),
-		cand("cheap", 0.2, day),
+		cand("cheap", 1.5, day),
 		cand("late", 1, 9*day),
 		cand("new", 3, -1),
+		cand("penny", 0.2, 10*day),
 	}
 	names := map[string]card.Listing{"k-rich": {Name: "Umbreon VMAX", Expansion: "Evolving Skies", Number: "215/203"}}
 	bands := Bands(cands, names, priority.Default, now)
@@ -36,7 +37,7 @@ func TestBands(t *testing.T) {
 		labels = append(labels, b.Label)
 		every = append(every, b.EveryDays)
 	}
-	if !slices.Equal(labels, []string{"$100+", "$20 to $100", "$5 to $20", "under $5"}) || !slices.Equal(every, []int{1, 2, 4, 7}) {
+	if !slices.Equal(labels, []string{"$100+", "$20 to $100", "$5 to $20", "$1 to $5", "under $1"}) || !slices.Equal(every, []int{1, 2, 4, 7, 14}) {
 		t.Fatalf("labels = %v, every = %v", labels, every)
 	}
 	rich := bands[0]
@@ -46,10 +47,15 @@ func TestBands(t *testing.T) {
 	}
 	cheap := bands[3]
 	if len(cheap.Tiles) != 3 || cheap.Due != 2 {
-		t.Fatalf("under-$5 band = %+v, want 3 tiles with 2 due", cheap)
+		t.Fatalf("$1 to $5 band = %+v, want 3 tiles with 2 due", cheap)
 	}
 	if cheap.Tiles[0].Ratio != nil || math.Abs(*cheap.Tiles[1].Ratio-9.0/7) > 1e-9 || math.Abs(*cheap.Tiles[2].Ratio-1.0/7) > 1e-9 {
-		t.Errorf("under-$5 order: want never priced, then overdue, then fresh")
+		t.Errorf("$1 to $5 order: want never priced, then overdue, then fresh")
+	}
+	// 10 days would be overdue on the weekly clock, but under $1 waits two weeks.
+	penny := bands[4]
+	if len(penny.Tiles) != 1 || penny.Due != 0 || math.Abs(*penny.Tiles[0].Ratio-10.0/14) > 1e-9 {
+		t.Errorf("under-$1 band = %+v, want one tile, not due, at 10/14", penny)
 	}
 }
 

@@ -18,7 +18,8 @@ func TestDefaultIntervals(t *testing.T) {
 		{400, day}, {100, day},
 		{99.99, 2 * day}, {20, 2 * day},
 		{19.99, 4 * day}, {5, 4 * day},
-		{4.99, 7 * day}, {1, 7 * day}, {0.06, 7 * day}, {0, 7 * day}, // nothing waits longer than a week
+		{4.99, 7 * day}, {1, 7 * day},
+		{0.99, 14 * day}, {0.06, 14 * day}, {0, 14 * day}, // nothing waits longer than two weeks
 	}
 	for _, tt := range tests {
 		if got := Default.Interval(tt.value); got != tt.want {
@@ -64,8 +65,8 @@ func TestDue(t *testing.T) {
 			[]card.Candidate{seen("rich", 400, 23*time.Hour+30*time.Minute), seen("rich-early", 400, 22*time.Hour)},
 			10, []string{"rich"}, 1},
 		{"most overdue relative to its own interval comes first",
-			// cheap: 14 days of a 7-day interval (2.0); rich: 30 hours of a 1-day interval (1.25)
-			[]card.Candidate{seen("rich", 400, 30*time.Hour), seen("cheap", 0.06, 14*day)},
+			// cheap: 28 days of a 14-day interval (2.0); rich: 30 hours of a 1-day interval (1.25)
+			[]card.Candidate{seen("rich", 400, 30*time.Hour), seen("cheap", 0.06, 28*day)},
 			10, []string{"cheap", "rich"}, 2},
 		{"equally overdue: value breaks the tie (DD-8), then ID",
 			[]card.Candidate{seen("b", 5, 8*day), seen("a", 5, 8*day), seen("rich", 10, 8*day)},
