@@ -161,10 +161,12 @@ latest market price, or the export price until it has one (PRD DD-12).
 | $100+ | 1 day |
 | $20 to $100 | 2 days |
 | $5 to $20 | 4 days |
-| under $5 | 7 days |
+| $1 to $5 | 7 days |
+| under $1 | 14 days |
 
 Never-priced cards come first, then the most overdue, then the most valuable. With about
-4,900 priceable cards that is roughly 915 requests a day, just under the daily 1,000.
+5,700 priceable cards that is roughly 770 requests a day, leaving about 230 of the daily
+1,000 for imports and catch-up.
 
 ## Scheduled runs on GitHub Actions
 

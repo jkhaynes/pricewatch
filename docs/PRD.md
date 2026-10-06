@@ -434,15 +434,16 @@ in the first few minutes.
 dates by value tier**.
 - **A card's value** is its most valuable collection row. For each row that is the latest
   observed market price, falling back to the export snapshot (DD-6) until the row has one.
-- **Its tier** sets how often it is re-checked. There are four tiers, and **no card waits
-  longer than a week**:
+- **Its tier** sets how often it is re-checked. There are five tiers, and **no card waits
+  longer than two weeks**:
 
   | Value | Checked every |
   |---|---|
   | $100 or more | 1 day |
   | $20 to $100 | 2 days |
   | $5 to $20 | 4 days |
-  | under $5 | 7 days |
+  | $1 to $5 | 7 days |
+  | under $1 | 14 days |
 
 - **A card is due** once its oldest-checked row was last checked at least its interval ago,
   less one hour of slack. The slack stops an hourly schedule from drifting an hour later each
@@ -461,6 +462,16 @@ which leaves about 85 of PokeWallet's 1,000 for imports and manual runs.
   the most overdue cards first, with value breaking ties.
 - **If that proves too tight,** the lever is the $5 to $20 tier: checking it every 5 days frees
   about 30 requests a day.
+
+*Changed 2026-10-06:* the collection grew to 5,682 priceable cards, and the four tiers needed
+about 1,034 requests a day. From 2026-09-28 the quota ran out by about 09:10 UTC every day,
+and anything that came due later waited until midnight. That hit the $100+ tier hardest: all
+53 of its cards were overdue, at 1.4 days old on average. The $5 to $20 lever above frees only
+about 32 a day, which is not enough. Cards under $1 are 66% of the cards (3,738) and about 534
+requests a day, but hold 3.3% of the value ($1.2k of $37.5k), and a move on a $0.30 card is
+pennies. Checking them every 14 days brings demand to about 770 a day, leaving about 230 for
+imports and catch-up. The movers report only counts cards worth $1 or more, so it is
+unaffected. The weekly ceiling and the 915 and 85 figures above describe the original four tiers.
 
 Stopping early keeps every tier on schedule and saves requests instead of spending them on
 cards whose price has had no time to move.
