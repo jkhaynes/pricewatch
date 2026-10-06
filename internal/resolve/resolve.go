@@ -24,16 +24,19 @@ type Catalog interface {
 // only to cards whose number starts with that prefix, which is how subsets the
 // export files under their parent reach their own set: Shining Fates cards
 // numbered "SV086/SV122" live in PokeWallet's "Shining Fates: Shiny Vault".
+// With a Print it applies only to rows of that print: TCGplayer files Destined
+// Rivals' prerelease prints under "Miscellaneous Cards & Products".
 type Override struct {
 	Expansion    string
-	NumberPrefix string // optional, e.g. "SV", "GG", "TG"
+	NumberPrefix string     // optional, e.g. "SV", "GG", "TG"
+	Print        card.Print // optional, e.g. card.PrintPrerelease
 	SetID        string
 }
 
 type Resolver struct {
 	cat       Catalog
 	source    string
-	overrides map[string]string            // overrideKey(expansion, prefix) -> set ID
+	overrides map[string]string            // overrideKey(expansion, prefix, print) -> set ID
 	byName    map[string][]string          // normalised set name -> set IDs; nil until loaded
 	cards     map[string][]card.SourceCard // set ID -> cards
 }
@@ -41,13 +44,13 @@ type Resolver struct {
 func New(cat Catalog, source string, overrides []Override) *Resolver {
 	norm := make(map[string]string, len(overrides))
 	for _, o := range overrides {
-		norm[overrideKey(o.Expansion, o.NumberPrefix)] = o.SetID
+		norm[overrideKey(o.Expansion, o.NumberPrefix, o.Print)] = o.SetID
 	}
 	return &Resolver{cat: cat, source: source, overrides: norm, cards: map[string][]card.SourceCard{}}
 }
 
-func overrideKey(expansion, prefix string) string {
-	return normExpansion(expansion) + "|" + strings.ToUpper(prefix)
+func overrideKey(expansion, prefix string, p card.Print) string {
+	return normExpansion(expansion) + "|" + strings.ToUpper(prefix) + "|" + string(p)
 }
 
 // numberPrefix returns the leading letters of a card's local number:
@@ -89,7 +92,7 @@ func (r *Resolver) Resolve(ctx context.Context, row card.Row) (card.Mapping, err
 	}
 
 	local, _, _ := strings.Cut(row.Number, "/")
-	setIDs, err := r.setsFor(ctx, row.Expansion, numberPrefix(strings.TrimSpace(local)))
+	setIDs, err := r.setsFor(ctx, row.Expansion, numberPrefix(strings.TrimSpace(local)), rowPrint)
 	if err != nil {
 		return card.Mapping{}, err
 	}
@@ -195,16 +198,19 @@ func (r *Resolver) load(ctx context.Context) error {
 	return nil
 }
 
-// setsFor finds the set for an expansion. A prefix-specific override wins, then
-// a plain override, then a name match against the provider's set names.
-func (r *Resolver) setsFor(ctx context.Context, expansion, prefix string) ([]string, error) {
-	if prefix != "" {
-		if id, ok := r.overrides[overrideKey(expansion, prefix)]; ok {
+// setsFor finds the set for an expansion. The most specific override wins:
+// prefix and print, then print, then prefix, then a plain override; failing
+// those, a name match against the provider's set names.
+func (r *Resolver) setsFor(ctx context.Context, expansion, prefix string, p card.Print) ([]string, error) {
+	for _, k := range []string{
+		overrideKey(expansion, prefix, p),
+		overrideKey(expansion, "", p),
+		overrideKey(expansion, prefix, card.PrintStandard),
+		overrideKey(expansion, "", card.PrintStandard),
+	} {
+		if id, ok := r.overrides[k]; ok {
 			return []string{id}, nil
 		}
-	}
-	if id, ok := r.overrides[overrideKey(expansion, "")]; ok {
-		return []string{id}, nil
 	}
 	if err := r.load(ctx); err != nil {
 		return nil, err
@@ -276,11 +282,11 @@ func normName(s string) string {
 	}, unaccent.Replace(s))
 }
 
-// LoadOverrides reads "expansion,set_id[,number_prefix]" lines. The header line
-// is optional and so is the third column, line by line.
+// LoadOverrides reads "expansion,set_id[,number_prefix[,print]]" lines. The
+// header line is optional and so are the third and fourth columns, line by line.
 func LoadOverrides(rd io.Reader) ([]Override, error) {
 	cr := csv.NewReader(rd)
-	cr.FieldsPerRecord = -1 // two or three fields per line
+	cr.FieldsPerRecord = -1 // two to four fields per line
 	recs, err := cr.ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("read overrides: %w", err)
@@ -290,12 +296,19 @@ func LoadOverrides(rd io.Reader) ([]Override, error) {
 		if i == 0 && strings.EqualFold(strings.TrimSpace(rec[0]), "expansion") {
 			continue // header
 		}
-		if len(rec) != 2 && len(rec) != 3 {
-			return nil, fmt.Errorf("overrides line %d: want 2 or 3 fields, got %d", i+1, len(rec))
+		if len(rec) < 2 || len(rec) > 4 {
+			return nil, fmt.Errorf("overrides line %d: want 2 to 4 fields, got %d", i+1, len(rec))
 		}
 		o := Override{Expansion: strings.TrimSpace(rec[0]), SetID: strings.TrimSpace(rec[1])}
-		if len(rec) == 3 {
+		if len(rec) >= 3 {
 			o.NumberPrefix = strings.TrimSpace(rec[2])
+		}
+		if len(rec) == 4 && strings.TrimSpace(rec[3]) != "" {
+			p, ok := card.ParsePrint(rec[3])
+			if !ok {
+				return nil, fmt.Errorf("overrides line %d: unknown print %q", i+1, rec[3])
+			}
+			o.Print = p
 		}
 		if o.Expansion == "" || o.SetID == "" {
 			return nil, fmt.Errorf("overrides line %d: expansion and set_id are required", i+1)
